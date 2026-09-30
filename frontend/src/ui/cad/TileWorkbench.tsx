@@ -1,63 +1,40 @@
 /**
- * Ensamblado de la pantalla de la simulación 1 (grada).
+ * Demo del módulo de grada: una sola pantalla, seis bloques.
  *
- * ocupa toda la ventana, sin scroll de página, con las seis zonas del
- * enunciado siempre visibles a la vez:
+ *   1. visor 3D + botón «pisar» + control de fuerza (300–1000 N)
+ *   2. botón «desplegar»: 9 piezas rotuladas y su BOM
+ *   3. esquema eléctrico animado (piezo, puente, capacitor, resistencia, LED)
+ *   4. cuatro resultados grandes: voltaje pico, energía por pisada,
+ *      energía al LED y pisadas hasta ver el LED encendido
+ *   5. balance de energía (tabla corta)
+ *   6. vista «escalera»: 15 módulos, energía por persona y por día
  *
- *   a) barra superior        e) seis gráficas simultáneas
- *   b) izquierda             f) barra de estado
- *   c) visor 3D
- *   d) derecha
- *
- * La selección de pieza es un único `PartId` que comparten el visor 3D, el
- * árbol, el BOM y el esquema: pinchar en cualquiera de ellos la resalta en las
- * otras tres.
- *
- * El cálculo NO se hace aquí: se reutiliza el solver del store (Web Worker con
- * repliegue al hilo principal), de modo que la pantalla y las pruebas usan
- * exactamente el mismo camino de resolución.
+ * El cálculo NO se hace aquí: se reutiliza el solver del store (el mismo
+ * camino que verifican las pruebas P1–P12). La física no cambia; sólo la
+ * interfaz se reduce a la demo.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store';
-import { TileInputs } from '../../sim/types';
+import { TileResult } from '../../sim/types';
 import { PartId } from '../../bom/bom';
-import { ViewMode } from '../../render/viewer';
 import { StepClock } from './clock';
-import { TopBar } from './TopBar';
-import { TreePane } from './TreePane';
-import { ParamsTable } from './ParamsTable';
-import { ViewerPane, ViewerHandle } from './ViewerPane';
-import { TitleBlock } from './TitleBlock';
-import { InputsPane } from './InputsPane';
-import { ResultsPane } from './ResultsPane';
-import { EnergyBalance } from './EnergyBalance';
+import { ViewerPane } from './ViewerPane';
 import { Schematic } from './Schematic';
 import { BomTable } from './BomTable';
-import { Charts } from './Charts';
-import { StatusBar } from './StatusBar';
-import { exportTileCSV, exportTileSummary, exportJSON } from '../exporters';
-import { STACK, CIRCUIT, PULSE } from '../../core/referenceModel';
+import { INPUTS, G } from '../../core/referenceModel';
+import { fmt, fmtSI } from './theme';
 
-/** Huella del modelo de referencia, para la barra de estado. */
-const MODEL_HASH = (() => {
-  const s = [
-    STACK.nStacks,
-    STACK.nLayers,
-    STACK.diameterMm,
-    STACK.layerThicknessMm,
-    CIRCUIT.Cs,
-    CIRCUIT.Rload,
-    CIRCUIT.Vf,
-    CIRCUIT.Vdiode,
-    PULSE.Tp,
-  ].join('|');
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h.toString(16).padStart(8, '0');
-})();
+/** Módulos de la escalera y flujo diario asumido para la vista simple. */
+const STAIR_MODULES = 15;
+const PEOPLE_PER_DAY = 500;
+/**
+ * Corriente a partir de la cual consideramos que el LED rojo se ve (sala
+ * oscura). Es un umbral de presentación: el número de pisadas se mide sobre la
+ * trama i(t) que devuelve el solver (result.series), nunca con una fórmula
+ * aparte. Con el modelo validado el LED conduce desde el paso 1; por debajo de
+ * ~450 N el pico real no alcanza este umbral y la KPI muestra «no llega».
+ */
+const LED_VISIBLE_A = 0.1e-3;
 
 export const TileWorkbench: React.FC = () => {
   const app = useApp();
@@ -66,166 +43,241 @@ export const TileWorkbench: React.FC = () => {
   const solving = app.tileBusy;
 
   const [selected, setSelected] = useState<PartId | null>(null);
-  const [hidden, setHidden] = useState<PartId[]>([]);
-
-  const [view, setView] = useState<ViewMode>('perspective');
   const [exploded, setExploded] = useState(false);
-  const [dims, setDims] = useState(true);
-  const [balloons, setBalloons] = useState(true);
-  const [playing, setPlaying] = useState(true);
-  const [section, setSection] = useState(0);
-  const [cursor, setCursor] = useState<{ x: number; y: number; z: number } | null>(null);
 
-  const viewerRef = useRef<ViewerHandle>(null);
-  const clock = useMemo(() => new StepClock(PULSE.Tp), []);
-
-  // La cadencia fija el periodo de la pisada, y con él la animación.
+  // El reloj se crea una sola vez: su periodo se ajusta en el efecto de abajo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const clock = useMemo(() => new StepClock(60 / inputs.cadence), []);
   useEffect(() => {
     clock.setPeriod(60 / inputs.cadence);
-    clock.rewind();
   }, [inputs.cadence, clock]);
 
-  useEffect(() => {
-    clock.running = playing;
-  }, [playing, clock]);
+  // El «pisar» vuelve al inicio de la pisada: el visor y el esquema arrancan
+  // el ciclo desde el golpe, sincronizados por el mismo reloj.
+  const pisar = useCallback(() => {
+    clock.rewind();
+  }, [clock]);
 
-  const patch = useCallback(
-    (p: TileInputs) => app.patchTile(p),
-    [app]
-  );
-
-  const toggleHidden = useCallback((id: PartId) => {
-    setHidden((h) => (h.includes(id) ? h.filter((x) => x !== id) : [...h, id]));
-  }, []);
-
-  // Al ocultar la pieza seleccionada, la selección pasa a nulo: no se puede
-  // seleccionar algo que no se ve.
-  useEffect(() => {
-    if (selected && hidden.includes(selected)) setSelected(null);
-  }, [hidden, selected]);
-
-  const onExport = useCallback(() => {
-    if (!result) return;
-    exportTileCSV(inputs, result);
-    exportTileSummary(inputs, result);
-    exportJSON(
-      {
-        project: 'PNI2',
-        sim: 1,
-        modelHash: MODEL_HASH,
-        inputs,
-        result,
-      },
-      `pni2_grada_${inputs.Fmax}N_${inputs.cadence}ppm.json`
-    );
-  }, [inputs, result]);
-
-  const violation = result ? !conserves(result.chain) : false;
+  const period = 60 / inputs.cadence;
+  const stepsToVisible = useMemo(() => (result ? stepsToLedOn(result, period) : null), [result, period]);
 
   return (
-    <div className="cad-shell" data-testid="cad-shell">
-      <TopBar
-        sim={1}
-        onSim={() => undefined}
-        view={view}
-        onView={setView}
-        exploded={exploded}
-        onExploded={setExploded}
-        dims={dims}
-        onDims={setDims}
-        balloons={balloons}
-        onBalloons={setBalloons}
-        playing={playing}
-        onPlaying={setPlaying}
-        section={section}
-        onSection={setSection}
-        onExport={onExport}
-        modelHash={MODEL_HASH}
-      />
+    <div className="demo-shell" data-testid="demo-shell">
+      {/* barra mínima: título, pisar y desplegar */}
+      <header className="demo-bar">
+        <span className="demo-title">módulo de grada · demo</span>
+        <div className="demo-bar-actions">
+          <button type="button" className="cad-btn" onClick={pisar} data-testid="btn-pisar">
+            pisar
+          </button>
+          <button
+            type="button"
+            className={`cad-btn${exploded ? ' on' : ''}`}
+            onClick={() => setExploded((e) => !e)}
+            data-testid="btn-desplegar"
+          >
+            {exploded ? 'reensamblar' : 'desplegar'}
+          </button>
+        </div>
+      </header>
 
-      <div className="cad-body">
-        {/* (b) izquierda: árbol y parámetros de solo lectura */}
-        <aside className="cad-left" data-testid="cad-left">
-          <TreePane
-            selected={selected}
-            hidden={hidden}
-            onSelect={setSelected}
-            onToggle={toggleHidden}
-            onSelectAll={(visible) => setHidden(visible ? [] : BOM_IDS)}
-          />
-          <div className="cad-scroll">
-            <ParamsTable />
-            <BomTable selected={selected} onSelect={setSelected} />
+      <div className="demo-body">
+        {/* 1 + 2 · visor 3D con la fuerza y, al desplegar, el BOM de las 9 piezas */}
+        <section className="demo-viewer-col" data-testid="demo-viewer-col">
+          <div className="demo-viewer">
+            <ViewerPane
+              inputs={inputs}
+              result={result}
+              clock={clock}
+              exaggeration={result?.renderExaggeration ?? 1}
+              view="perspective"
+              exploded={exploded}
+              dims={false}
+              balloons={exploded}
+              section={0}
+              selected={selected}
+              hidden={[]}
+              onSelect={setSelected}
+              onHover={() => undefined}
+            />
           </div>
-        </aside>
+          {exploded ? (
+            <div className="demo-bom" data-testid="demo-bom">
+              <BomTable selected={selected} onSelect={setSelected} />
+            </div>
+          ) : (
+            <div className="demo-force" data-testid="demo-force">
+              <label htmlFor="demo-fmax">fuerza de la pisada</label>
+              <input
+                id="demo-fmax"
+                type="range"
+                min={INPUTS.Fmax.min}
+                max={INPUTS.Fmax.max}
+                step={INPUTS.Fmax.step}
+                value={inputs.Fmax}
+                onChange={(e) => app.patchTile({ Fmax: Number(e.target.value) })}
+                data-testid="demo-fmax"
+              />
+              <b>{inputs.Fmax} N</b>
+              <span className="dim">
+                {INPUTS.Fmax.min}–{INPUTS.Fmax.max} N · {fmt(inputs.Fmax / (G * 1.3), 1)} kg de persona
+              </span>
+            </div>
+          )}
+        </section>
 
-        {/* (c) centro: visor 3D con cajetín y lecturas */}
-        <main className="cad-center" data-testid="cad-center">
-          <ViewerPane
-            ref={viewerRef}
-            inputs={inputs}
-            result={result}
-            clock={clock}
-            exaggeration={result?.renderExaggeration ?? 1}
-            view={view}
-            exploded={exploded}
-            dims={dims}
-            balloons={balloons}
-            section={section}
-            selected={selected}
-            hidden={hidden}
-            onSelect={setSelected}
-            onHover={setCursor}
-          />
-          <TitleBlock modelHash={MODEL_HASH} units="mm" />
-        </main>
+        {/* 3–6 · resultados, esquema, balance y escalera */}
+        <aside className="demo-side" data-testid="demo-side">
+          {/* 4 · los cuatro números grandes */}
+          <div className="demo-kpis" data-testid="demo-kpis">
+            <Kpi
+              label="voltaje pico"
+              value={result ? `${fmt(result.Voc, 1)} V` : solving ? '…' : '—'}
+              note="en vacío, con F_max"
+            />
+            <Kpi
+              label="energía por pisada"
+              value={result ? fmtSI(result.E_harvested, 'J', 1) : solving ? '…' : '—'}
+              note="cosechada por el módulo"
+            />
+            <Kpi
+              label="energía al LED"
+              value={result ? fmtSI(result.E_LED, 'J', 1) : solving ? '…' : '—'}
+              note="por pisada, en régimen"
+            />
+            <Kpi
+              label="pisadas para ver el LED"
+              value={stepsToVisible === null ? 'no llega' : stepsToVisible === 1 ? '1' : `${stepsToVisible}`}
+              note={
+                result
+                  ? `i_led ≥ ${fmt(LED_VISIBLE_A * 1e3, 1)} mA · pico real ${fmt(result.ILedPeak * 1e3, 3)} mA`
+                  : `i_led ≥ ${fmt(LED_VISIBLE_A * 1e3, 1)} mA`
+              }
+            />
+          </div>
 
-        {/* (d) derecha: entradas, resultados, balance y esquema */}
-        <aside className="cad-right" data-testid="cad-right">
-          <div className="cad-scroll">
-            <InputsPane inputs={inputs} onChange={patch} solving={solving} />
-            <ResultsPane result={result} solving={solving} />
-            <EnergyBalance result={result} />
-            <Schematic result={result} clock={clock} selected={selected} onSelect={setSelected} />
+          {/* 3 · esquema animado, sincronizado con el 3D */}
+          <Schematic result={result} clock={clock} selected={selected} onSelect={setSelected} />
+
+          {/* 5 · balance de energía, tabla corta */}
+          <div className="demo-balance" data-testid="demo-balance">
+            <div className="cad-subhead">
+              <span>balance de energía por pisada</span>
+              <span className="dim">{inputs.Fmax} N · {inputs.cadence} pasos/min</span>
+            </div>
+            <BalanceTable result={result} />
+          </div>
+
+          {/* 6 · vista escalera */}
+          <div className="demo-stairs" data-testid="demo-stairs">
+            <div className="cad-subhead">
+              <span>escalera de {STAIR_MODULES} módulos</span>
+              <span className="dim">{PEOPLE_PER_DAY} personas/día</span>
+            </div>
+            <div className="demo-stairs-row" aria-hidden="true">
+              {Array.from({ length: STAIR_MODULES }, (_, i) => (
+                <span key={i} className="demo-stair-cell">
+                  {i + 1}
+                </span>
+              ))}
+            </div>
+            <StairsFacts result={result} />
           </div>
         </aside>
       </div>
-
-      {/* (e) las seis gráficas, siempre a la vista */}
-      <Charts result={result} clock={clock} />
-
-      {/* (f) barra de estado */}
-      <StatusBar
-        cursor={cursor}
-        modelHash={MODEL_HASH}
-        solver="RK4 adaptativo · 200 subpasos/pisada"
-        nStepsRun={result?.nStepsRun ?? null}
-        nStepsRequested={result?.nStepsRequested ?? null}
-        alerts={result?.alerts.length ?? 0}
-        violation={violation}
-      />
     </div>
   );
 };
 
-/** Ids de las piezas, para "ocultar todo". */
-const BOM_IDS: PartId[] = [
-  'placa',
-  'resortes',
-  'stacks',
-  'marco',
-  'pcb',
-  'puente',
-  'cs',
-  'resistencia',
-  'led',
-];
+/** Un resultado grande: etiqueta, valor y una nota corta. */
+const Kpi: React.FC<{ label: string; value: string; note: string }> = ({ label, value, note }) => (
+  <div className="demo-kpi">
+    <span className="demo-kpi-label">{label}</span>
+    <span className="demo-kpi-value">{value}</span>
+    <span className="demo-kpi-note">{note}</span>
+  </div>
+);
 
-/** Comprueba la monótonía de la cadena sin lanzar: la UI informa, no rompe. */
-function conserves(chain: { U_el: number; E_ideal: number; E_extracted: number; E_stored: number; E_LED: number }): boolean {
-  const ks = ['U_el', 'E_ideal', 'E_extracted', 'E_stored', 'E_LED'] as const;
-  for (let i = 1; i < ks.length; i++) {
-    if (chain[ks[i]] > chain[ks[i - 1]] * (1 + 1e-6) + 1e-18) return false;
+/** Tabla corta: cada eslabón con su porcentaje respecto al ANTERIOR. */
+const BalanceTable: React.FC<{ result: TileResult | null }> = ({ result }) => {
+  if (!result) {
+    return <p className="cad-empty">resolviendo…</p>;
   }
-  return true;
+  const c = result.chain;
+  const rows: { k: string; label: string; E: number; prev: number | null; note: string }[] = [
+    { k: 'u', label: 'piezo', E: c.U_el, prev: null, note: 'electricidad de cada pisada' },
+    { k: 'x', label: 'extraída', E: c.E_extracted, prev: c.U_el, note: 'pasa por el puente' },
+    { k: 's', label: 'almacenada', E: c.E_stored, prev: c.E_extracted, note: `puente −${fmtSI(result.E_bridgeLoss, 'J', 1)}` },
+    { k: 'led', label: 'LED', E: c.E_LED, prev: c.E_stored, note: `R −${fmtSI(result.E_R, 'J', 1)}` },
+  ];
+  return (
+    <table className="cad-table">
+      <thead>
+        <tr>
+          <th>eslabón</th>
+          <th className="num">energía</th>
+          <th className="num">% del anterior</th>
+          <th className="dim">nota</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.k} data-testid={`bal-${r.k}`}>
+            <td>{r.label}</td>
+            <td className="num val">{fmtSI(r.E, 'J', 1)}</td>
+            <td className="num dim">{r.prev === null || r.prev <= 0 ? '—' : `${fmt((r.E / r.prev) * 100, 1)} %`}</td>
+            <td className="dim">{r.note}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+};
+
+/** Tres cifras de la escalera: por pisada, por persona y por día. */
+const StairsFacts: React.FC<{ result: TileResult | null }> = ({ result }) => {
+  if (!result) return <p className="cad-empty">resolviendo…</p>;
+  const perStep = result.E_harvested;
+  const perPerson = perStep * STAIR_MODULES;
+  const perDay = perPerson * PEOPLE_PER_DAY;
+  return (
+    <table className="cad-table">
+      <tbody>
+        <tr data-testid="stairs-step">
+          <td>por pisada (1 módulo)</td>
+          <td className="num val">{fmtSI(perStep, 'J', 1)}</td>
+        </tr>
+        <tr data-testid="stairs-person">
+          <td>por persona ({STAIR_MODULES} módulos)</td>
+          <td className="num val">{fmtSI(perPerson, 'J', 1)}</td>
+        </tr>
+        <tr data-testid="stairs-day">
+          <td>por día ({PEOPLE_PER_DAY} personas)</td>
+          <td className="num val">{fmtSI(perDay, 'J', 1)}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
+};
+
+/**
+ * Pisadas necesarias hasta que el pico de corriente del LED alcanza el umbral
+ * de visibilidad. Se lee de la trama temporal del solver, ciclo a ciclo: no se
+ * añade física nueva, sólo se cuenta cuándo empieza a brillar.
+ */
+function stepsToLedOn(result: TileResult, period: number): number | null {
+  const { t, I } = result.series;
+  let cycle = -1;
+  let peak = 0;
+  for (let i = 0; i < t.length; i++) {
+    const c = Math.floor(t[i] / period);
+    if (c !== cycle) {
+      if (cycle >= 0 && peak >= LED_VISIBLE_A) return cycle + 1;
+      cycle = c;
+      peak = 0;
+    }
+    const a = Math.abs(I[i]);
+    if (a > peak) peak = a;
+  }
+  return peak >= LED_VISIBLE_A ? cycle + 1 : null;
 }
