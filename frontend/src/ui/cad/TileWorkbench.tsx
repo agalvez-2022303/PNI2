@@ -205,8 +205,9 @@ const BalanceTable: React.FC<{ result: TileResult | null }> = ({ result }) => {
   }
   const c = result.chain;
   const rows: { k: string; label: string; E: number; prev: number | null; note: string }[] = [
-    { k: 'u', label: 'piezo', E: c.U_el, prev: null, note: 'electricidad de cada pisada' },
-    { k: 'x', label: 'extraída', E: c.E_extracted, prev: c.U_el, note: 'pasa por el puente' },
+    { k: 'u', label: 'energía elástica en la cerámica', E: c.U_el, prev: null, note: 'trabajo mecánico almacenado' },
+    { k: 'i', label: 'eléctrica disponible (E_ideal)', E: c.E_ideal, prev: c.U_el, note: 'circuito abierto, ½·Cp·Voc²' },
+    { k: 'x', label: 'extraída', E: c.E_extracted, prev: c.E_ideal, note: 'pasa por el puente' },
     { k: 's', label: 'almacenada', E: c.E_stored, prev: c.E_extracted, note: `puente −${fmtSI(result.E_bridgeLoss, 'J', 1)}` },
     { k: 'led', label: 'LED', E: c.E_LED, prev: c.E_stored, note: `R −${fmtSI(result.E_R, 'J', 1)}` },
   ];
