@@ -41,12 +41,17 @@ function resample(srcX: number[], srcY: number[], dstX: number[]): number[] {
   });
 }
 
-const ChartCard: React.FC<{ title: string; sub?: string; children: React.ReactNode }> = ({ title, sub, children }) => (
-  <div className="chart-card">
-    <h4>
-      {title}
-      {sub && <span>{sub}</span>}
-    </h4>
+/**
+ * Celda plana de gráfica. Sustituye al antiguo `ChartCard`: no hay caja, ni
+ * sombra, ni borde redondeado, sólo una línea de 1 px que separa las celdas y
+ * una franja de cabecera con el mismo fondo que el resto de la interfaz.
+ */
+const ChartSlot: React.FC<{ title: string; sub?: string; children: React.ReactNode }> = ({ title, sub, children }) => (
+  <div className="chart-slot">
+    <div className="chart-cap">
+      <span>{title}</span>
+      {sub && <span className="u">{sub}</span>}
+    </div>
     <div className="chart-body">{children}</div>
   </div>
 );
@@ -335,7 +340,6 @@ export const BeamSim: React.FC = () => {
       <div className="stage">
         <Viewer3D
           ref={viewerRef}
-          kind="beam"
           beamInputs={p}
           beamResult={r}
           modeIndex={sweeping ? 0 : modeIndex}
@@ -343,7 +347,7 @@ export const BeamSim: React.FC = () => {
           beamDriveRef={driveRef}
         />
         <div className="charts" data-testid="beam-charts">
-          <ChartCard title="Potencia vs frecuencia (FRF)" sub={r ? `pico ${formatSI(r.peakFreq, 'Hz')}` : ''}>
+          <ChartSlot title="Potencia vs frecuencia (FRF)" sub={r ? `pico ${formatSI(r.peakFreq, 'Hz')}` : ''}>
             <UPlotChart
               ref={frfChart}
               data={frf}
@@ -361,8 +365,8 @@ export const BeamSim: React.FC = () => {
               )}
               redrawKey={cmp ? 'bf-cmp' : 'bf'}
             />
-          </ChartCard>
-          <ChartCard title="Potencia vs R_load" sub={r ? `R_opt ${formatSI(r.Ropt, 'Ω')}` : ''}>
+          </ChartSlot>
+          <ChartSlot title="Potencia vs R_load" sub={r ? `R_opt ${formatSI(r.Ropt, 'Ω')}` : ''}>
             <UPlotChart
               data={pvr}
               opts={lineOpts('R (Ω)', 'P (W)', [{ label: 'P', color: CHART.amber }], true, [
@@ -370,13 +374,13 @@ export const BeamSim: React.FC = () => {
               ])}
               redrawKey="br"
             />
-          </ChartCard>
-          <ChartCard title="Voltaje V(t)" sub="régimen permanente">
+          </ChartSlot>
+          <ChartSlot title="Voltaje V(t)" sub="régimen permanente">
             <UPlotChart data={vt} opts={lineOpts('t (s)', 'V (V)', [{ label: 'V', color: CHART.accent }])} redrawKey="bv" />
-          </ChartCard>
-          <ChartCard title="Potencia P(t)" sub="W">
+          </ChartSlot>
+          <ChartSlot title="Potencia P(t)" sub="W">
             <UPlotChart data={pt} opts={lineOpts('t (s)', 'P (W)', [{ label: 'P', color: CHART.amber }])} redrawKey="bp" />
-          </ChartCard>
+          </ChartSlot>
         </div>
       </div>
     </div>

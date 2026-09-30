@@ -1,131 +1,103 @@
+/**
+ * Raíz de la aplicación.
+ *
+ * Sólo se implementa la simulación 1 (grada), que ocupa toda la ventana. Las
+ * demás conservan su entrada en la barra superior, marcada como pendiente, para
+ * que el alcance de la herramienta quede a la vista sin enlaces roto.
+ *
+ * El hash `#beam` y `#report` siguen montando las vistas ya existentes para no
+ * perder trabajo previo: no forman parte de la pantalla CAD.
+ */
 import React, { useEffect, useRef, useState } from 'react';
-import { TileSim } from '@/ui/TileSim';
-import { BeamSim } from '@/ui/BeamSim';
-import { ReportTab } from '@/ui/ReportTab';
-import { useApp } from '@/ui/store';
-import { downloadArchive, importArchive } from '@/sim/storage';
-import { Footprints, Activity, FileText, Zap, Cpu, Save, FolderOpen, HardDriveDownload, HardDriveUpload } from 'lucide-react';
+import { TileWorkbench } from './ui/cad/TileWorkbench';
+import { BeamSim } from './ui/BeamSim';
+import { ReportTab } from './ui/ReportTab';
+import { useApp } from './ui/store';
+import { importArchive } from './sim/storage';
 
-type Tab = 'tile' | 'beam' | 'report';
+type View = 'cad' | 'beam' | 'report';
 
-const VALID: Tab[] = ['tile', 'beam', 'report'];
-function initialTab(): Tab {
-  const h = (typeof window !== 'undefined' ? window.location.hash.replace('#', '') : '') as Tab;
-  return VALID.includes(h) ? h : 'tile';
+const VALID: View[] = ['cad', 'beam', 'report'];
+
+function initialView(): View {
+  const h = (typeof window !== 'undefined' ? window.location.hash.replace('#', '') : '') as View;
+  if (h === 'beam' || h === 'report') return h;
+  return 'cad';
 }
 
-const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'tile', label: 'Simulación 1 · Baldosa', icon: <Footprints size={15} /> },
-  { id: 'beam', label: 'Simulación 2 · Viga', icon: <Activity size={15} /> },
-  { id: 'report', label: 'Reporte', icon: <FileText size={15} /> },
-];
-
 export default function App() {
-  const [tab, setTabState] = useState<Tab>(initialTab);
-  const setTab = (t: Tab) => {
-    setTabState(t);
-    if (typeof window !== 'undefined') window.location.hash = t;
-  };
   const app = useApp();
+  const [view, setView] = useState<View>(initialView);
+  const [ioMsg, setIoMsg] = useState('');
+  const runsFile = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     const onHash = () => {
-      const h = window.location.hash.replace('#', '') as Tab;
-      if (VALID.includes(h)) setTabState(h);
+      const h = window.location.hash.replace('#', '') as View;
+      if (VALID.includes(h)) setView(h);
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-  const busy = (tab === 'tile' && app.tileBusy) || (tab === 'beam' && app.beamBusy);
 
-  const runsFile = useRef<HTMLInputElement>(null);
-  const [ioMsg, setIoMsg] = useState('');
-
-  const saveRuns = () => {
-    app.archiveCurrent().then(
-      () => setIoMsg('Corrida guardada en IndexedDB'),
-      () => setIoMsg('No se pudo guardar la corrida')
-    );
-  };
-  const exportRuns = () => {
-    downloadArchive().then(
-      () => setIoMsg('Corridas exportadas'),
-      () => setIoMsg('No se pudieron exportar las corridas')
-    );
-  };
   const importRuns = async (file: File) => {
     try {
       const { runs, validation } = await importArchive(await file.text());
       await app.reloadRuns();
-      setIoMsg(`Importadas ${runs} corrida(s) y ${validation} validación(es)`);
+      setIoMsg(`importadas ${runs} corrida(s) y ${validation} validación(es)`);
     } catch (e) {
-      setIoMsg('No se pudo importar: ' + (e as Error).message);
+      setIoMsg('no se pudo importar: ' + (e as Error).message);
     }
   };
 
-  return (
-    <div className="shell">
-      <header className="topbar">
-        <div className="brand">
-          <span className="logo">
-            <Zap size={17} />
-          </span>
-          <span>
-            PiezoLab
-            <br />
-            <small>Simulación 3D · Cosecha piezoeléctrica</small>
-          </span>
-        </div>
-        <nav className="tabs" data-testid="tabs">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              className={`tab ${tab === t.id ? 'active' : ''}`}
-              onClick={() => setTab(t.id)}
-              data-testid={`tab-${t.id}`}
-            >
-              {t.icon}
-              {t.label}
-            </button>
-          ))}
-        </nav>
-        <div className="spacer" />
-        <button className="btn sm ghost" onClick={saveRuns} data-testid="runs-save" title="Guardar la corrida actual en IndexedDB">
-          <Save size={14} /> Guardar
-        </button>
-        <button className="btn sm ghost" onClick={exportRuns} data-testid="runs-export" title="Exportar corridas a JSON">
-          <HardDriveDownload size={14} /> Exportar
-        </button>
-        <button className="btn sm ghost" onClick={() => runsFile.current?.click()} data-testid="runs-import" title="Importar corridas desde JSON">
-          <FolderOpen size={14} /> Importar
-        </button>
+  if (view === 'beam') {
+    return (
+      <div className="legacy">
+        <LegacyBar onBack={() => setView('cad')} onImport={() => runsFile.current?.click()} />
+        <BeamSim />
         <input
           ref={runsFile}
           type="file"
           accept=".json"
-          style={{ display: 'none' }}
-          data-testid="runs-file"
+          hidden
           onChange={(e) => e.target.files?.[0] && importRuns(e.target.files[0])}
         />
-        <span className="pill" data-testid="worker-status">
-          <Cpu size={12} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-          {busy ? 'calculando…' : 'solver listo'}
-        </span>
-        <span className="pill" data-testid="storage-status">
-          <HardDriveUpload size={12} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-          IndexedDB · {app.runs.length} corrida{app.runs.length === 1 ? '' : 's'}
-        </span>
-        <span className="pill">SI · RK4 adaptativo</span>
-      </header>
+      </div>
+    );
+  }
 
-      {ioMsg && (
-        <div className="io-status" role="status" data-testid="io-status">
-          {ioMsg}
-        </div>
-      )}
+  if (view === 'report') {
+    return (
+      <div className="legacy">
+        <LegacyBar onBack={() => setView('cad')} onImport={() => runsFile.current?.click()} />
+        <ReportTab />
+        <input
+          ref={runsFile}
+          type="file"
+          accept=".json"
+          hidden
+          onChange={(e) => e.target.files?.[0] && importRuns(e.target.files[0])}
+        />
+      </div>
+    );
+  }
 
-      {tab === 'tile' && <TileSim />}
-      {tab === 'beam' && <BeamSim />}
-      {tab === 'report' && <ReportTab />}
-    </div>
-  );
+  return <TileWorkbench />;
 }
+
+/**
+ * Barra mínima para las vistas heredadas. La pantalla CAD no la usa: la fase 2
+ * quita la barra de pestañas y deja la pantalla completa para el modelo.
+ */
+const LegacyBar: React.FC<{ onBack: () => void; onImport: () => void }> = ({ onBack, onImport }) => (
+  <div className="cad-top legacy-bar">
+    <button type="button" className="cad-btn" onClick={onBack} data-testid="back-cad">
+      volver a la pantalla cad
+    </button>
+    <span className="cad-group-lbl">vistas heredadas: no forman parte de la fase 2</span>
+    <span className="grow" />
+    <button type="button" className="cad-btn" onClick={onImport} data-testid="legacy-import">
+      importar corridas
+    </button>
+  </div>
+);

@@ -91,7 +91,11 @@ export function runTile(p: TileInputs): TileResult {
 
   const subSteps = 200;
   const dt = period / subSteps;
-  const maxSteps = 2000;
+  // Si la entrada fija el número de pisadas, ése es el techo. Sin `nSteps` se
+  // mantiene el techo alto del enunciado y es el desvanecimiento del régimen
+  // estacionario (STEADY_REL_TOL) lo que corta la corrida, como en P1-P12.
+  const requested = typeof p.nSteps === 'number' && isFinite(p.nSteps) ? Math.max(1, Math.round(p.nSteps)) : null;
+  const maxSteps = requested ?? 2000;
 
   let Vp = 0;
   let Vc = 0;
@@ -99,6 +103,7 @@ export function runTile(p: TileInputs): TileResult {
   let eLastStep = Number.NaN;
   let ePrevStep = Number.NaN;
   let stepsToSteady = 0;
+  let stepsRun = 0;
   let steadyRelVariation = Number.POSITIVE_INFINITY;
   let E_LED = 0;
   let E_R = 0;
@@ -156,6 +161,7 @@ export function runTile(p: TileInputs): TileResult {
     ePrevStep = eLastStep;
     eLastStep = eStep;
     stepsToSteady = step;
+    stepsRun = step;
     // C2: los resultados se reportan sobre el ÚLTIMO pisada completo, que ya
     // es estacionario. Promediar sobre todos los pasos (incluido el transitorio
     // con Cs descargado) mezclaría dos regímenes distintos.
@@ -168,7 +174,9 @@ export function runTile(p: TileInputs): TileResult {
     if (step > 1) {
       const denom = Math.abs(eStep) > 0 ? Math.abs(eStep) : 1;
       steadyRelVariation = Math.abs(eStep - ePrevStep) / denom;
-      if (steadyRelVariation < STEADY_REL_TOL) break;
+      // Sólo se corta por régimen estacionario si el usuario no fijó el número
+      // de pisadas: con `nSteps` explícito se corren exactamente los pedidos.
+      if (requested === null && steadyRelVariation < STEADY_REL_TOL) break;
     }
   }
 
@@ -182,12 +190,14 @@ export function runTile(p: TileInputs): TileResult {
   const VcSteady = VcPeak;
 
   // Trama de un pisada en el estado estacionario, para la interfaz.
-  const series: Series = { t: [], F: [], Vp: [], Vcs: [], I: [], P: [], Estored: [] };
+  const series: Series = { t: [], F: [], Vp: [], Vcs: [], I: [], P: [], Estored: [], EledCum: [] };
   {
     let VpT = Vp;
     let VcT = Vc;
     const n = 300;
     const h = period / n;
+    // Energía entregada al LED acumulada, por punto medio (∫ V_f·I_LED dt).
+    let eLedCum = 0;
     for (let k = 0; k <= n; k++) {
       const tk = k * h;
       const IL = ledCurrent(VcT, CIRCUIT.Rload, CIRCUIT.Vf);
@@ -198,6 +208,8 @@ export function runTile(p: TileInputs): TileResult {
       series.I.push(IL);
       series.P.push(IL * CIRCUIT.Vf);
       series.Estored.push(0.5 * CIRCUIT.Cs * VcT * VcT);
+      series.EledCum.push(eLedCum);
+      eLedCum += IL * CIRCUIT.Vf * h;
       if (k < n) [VpT, VcT] = rk4StepCircuit(deriv, tk, [VpT, VcT], h);
     }
   }
@@ -254,6 +266,10 @@ export function runTile(p: TileInputs): TileResult {
     U_el,
     E_harvested,
     E_LED: E_LED_step,
+    E_R: E_R_step,
+    E_bridgeLoss: E_bridgeLoss_step,
+    nStepsRun: stepsRun,
+    nStepsRequested: requested,
     chain,
     stress,
     strain,

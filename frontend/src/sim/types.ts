@@ -9,6 +9,12 @@ export interface TileInputs {
   Fmax: number;
   /** Cadencia de pisado [pasos/min]. */
   cadence: number;
+  /**
+   * Número de pisadas que se integran. Si se omite, el solver integra hasta
+   * alcanzar el régimen estacionario, que es el comportamiento por defecto de
+   * las pruebas P1-P12. La interfaz lo limita a 1, 10 o 50.
+   */
+  nSteps?: number;
 }
 
 export interface BeamInputs {
@@ -27,6 +33,8 @@ export interface Series {
   I: number[];
   P: number[];
   Estored: number[];
+  /** Energía ACUMULADA entregada al LED hasta el instante t [J]. */
+  EledCum: number[];
 }
 
 /** Alerta de seguridad activa (C8). */
@@ -55,6 +63,14 @@ export interface TileResult {
   E_harvested: number;
   /** Energía entregada al LED por pisada [J]. */
   E_LED: number;
+  /** Energía disipada en la resistencia de carga R en el pisada estacionario [J]. */
+  E_R: number;
+  /** Pérdida en los dos diodos del puente en conducción, por pisada [J]. */
+  E_bridgeLoss: number;
+  /** Número de pisadas realmente integrados en esta corrida. */
+  nStepsRun: number;
+  /** Número de pisadas pedido por la entrada `nSteps` (null si no se fijó). */
+  nStepsRequested: number | null;
   /** Cadena de energía de un pisada en régimen estacionario (verificación C11). */
   chain: import('../core/energy').EnergyChain;
   /** Esfuerzo por stack en el pico [Pa]. */
