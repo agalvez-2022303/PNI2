@@ -139,16 +139,57 @@ describe('P8 — Cota de Williams & Yates con ζ mecánico fijo (C4)', () => {
   });
 });
 
-describe('P9 — FRF contra integración temporal en resonancia', () => {
-  it('la diferencia es menor del 2 %', () => {
+describe('P9 — potencia eléctrica: FRF contra el promedio temporal ⟨v²/R⟩', () => {
+  it('runBeam: FRF eléctrica y promedio de la simulación acoplada coinciden < 2 %', () => {
+    const r = runBeam({ a0: 2, fExc: 72.64 });
+    expect(r.frfVsTime.relDiff).toBeLessThan(0.02);
+    // Ambas son potencias eléctricas mucho mayores que las del amortiguador.
+    expect(r.frfVsTime.pFrf).toBeGreaterThan(0);
+    expect(r.frfVsTime.pTime).toBeGreaterThan(0);
+  });
+
+  it('la energía eléctrica no supera la cota de Williams & Yates', () => {
+    const r = runBeam({ a0: 2, fExc: 72.64 });
+    expect(r.frfVsTime.pFrf).toBeLessThanOrEqual(r.pBound);
+  });
+});
+
+describe('P9b — comprobación mecánica de la FRF', () => {
+  it('la FRF mecánica coincide con la integración temporal < 2 %', () => {
     const pFrf = mechanicalPowerFRF(model, model.modes[0].omega, 2, BEAM.zetaMec);
     const pTime = mechanicalPowerTimeDomain(model, model.modes[0].omega, 2, BEAM.zetaMec).meanPower;
     expect(rel(pTime, pFrf)).toBeLessThan(0.02);
   });
 
-  it('runBeam reporta la comparación', () => {
+  it('la disipación mecánica NO lleva el factor γ² espurio', () => {
+    const m = model.modes[0];
+    const p = mechanicalPowerFRF(model, m.omega, 2, BEAM.zetaMec);
+    // P = γ²a0²/(4ζω) en resonancia: cuatro veces la cota de Williams & Yates.
+    const expected = (m.gamma * m.gamma * 2 * 2) / (4 * BEAM.zetaMec * m.omega);
+    expect(rel(p, expected)).toBeLessThan(1e-9);
+    // La versión con γ² en c era 5.84 µW; la correcta es ~1131 µW.
+    expect(p).toBeGreaterThan(1.1e-3);
+  });
+
+  it('runBeam reporta la comparación mecánica', () => {
     const r = runBeam({ a0: 2, fExc: 72.64 });
-    expect(r.frfVsTime.relDiff).toBeLessThan(0.02);
+    expect(r.mechVsTime.relDiff).toBeLessThan(0.02);
+  });
+});
+
+describe('P9c — balance de potencia en régimen', () => {
+  it('P_entrada = P_mecánica + P_eléctrica dentro del 2 %', () => {
+    const r = runBeam({ a0: 2, fExc: 72.64 });
+    expect(r.powerBalance.relDiff).toBeLessThan(0.02);
+  });
+
+  it('los tres términos son positivos y la suma es coherente', () => {
+    const r = runBeam({ a0: 2, fExc: 72.64 });
+    const b = r.powerBalance;
+    expect(b.pInput).toBeGreaterThan(0);
+    expect(b.pMech).toBeGreaterThan(0);
+    expect(b.pElec).toBeGreaterThan(0);
+    expect(rel(b.pSum, b.pInput)).toBeLessThan(0.02);
   });
 });
 

@@ -348,13 +348,16 @@ export function williamsYatesPmax(
 
 /**
  * Potencia mecánica media disipada en resonancia por INTEGRACIÓN TEMPORAL
- * directa del modo 1 excitado por base (P9).
+ * directa del modo 1 excitado por base (P9b).
  *
  * Se integra  q̈ + 2ζω₁q̇ + ω₁²q = -γ·a0·sin(ωt)  hasta régimen permanente y se
- * promedia la potencia disipada en el amortiguamiento
- *   P = ½·c·q̇²,   c = 2ζω₁·γ²
+ * promedia la potencia disipada en el amortiguamiento viscoso
+ *   P = ⟨c·q̇²⟩,   c = 2ζω₁  (modal normalizada en masa, m_r = 1)
  * sobre ciclos completos. El valor se contrasta con la predicción analítica
  * de la FRF en `mechanicalPowerFRF`.
+ *
+ * NOTA: el factor γ² NO aparece en c. La potencia disipada en cortocircuito
+ * vale P = γ²·a0²/(4ζω₁), coherente con P_e,max = P/4 = γ²·a0²/(16ζω₁).
  */
 export function mechanicalPowerTimeDomain(
   model: BeamModel,
@@ -365,7 +368,7 @@ export function mechanicalPowerTimeDomain(
   nCyclesAverage: number = 20
 ): { meanPower: number; qAmplitude: number } {
   const m = model.modes[0];
-  const c = 2 * zeta * m.omega * m.gamma * m.gamma;
+  const c = 2 * zeta * m.omega;
   const f = omega / (2 * Math.PI);
   const deriv = (t: number, y: number[]): number[] => {
     const a = a0 * Math.sin(omega * t);
@@ -386,7 +389,7 @@ export function mechanicalPowerTimeDomain(
   const t0 = nCyclesTransient / f;
   for (let i = 0; i < n; i++) {
     y = rk4Step2(deriv, t0 + i * h, y, h);
-    acc += 0.5 * c * y[1] * y[1] * h;
+    acc += c * y[1] * y[1] * h;
     qAmp = Math.max(qAmp, Math.abs(y[0]));
   }
   return { meanPower: acc / (n * h), qAmplitude: qAmp };
@@ -397,8 +400,13 @@ export function mechanicalPowerTimeDomain(
  *
  * Amplitud del desplazamiento en régimen permanente:
  *   |q| = γ·a0 / √((ω₁²-ω²)² + (2ζω₁ω)²)
- * Potencia media disipada en el amortiguamiento c = 2ζω₁·γ²:
- *   P = ½·c·⟨q̇²⟩ = ½·c·(|q|·ω)²/2 = ¼·c·|q|²·ω²
+ *
+ * Con la modal normalizada en masa (m_r = 1) el amortiguador es c = 2ζω₁.
+ * La potencia instantánea disipada es c·q̇², de modo que
+ *   P = ⟨c·q̇²⟩ = c·|q|²ω²/2 = ½·c·|q|²·ω²
+ *
+ * En resonancia esto reduce a P = γ²·a0²/(4ζω₁), y la potencia eléctrica
+ * máxima admisible es P/4 = γ²·a0²/(16ζω₁) = `williamsYatesPmax`.
  * El factor ω² es esencial: en resonancia |q| ∝ 1/ω₁² pero la velocidad, y por
  * tanto la potencia disipada, no se anula.
  */
@@ -408,8 +416,8 @@ export function mechanicalPowerFRF(model: BeamModel, omega: number, a0: number, 
   const denom =
     Math.pow(m.omega * m.omega - omega * omega, 2) + Math.pow(2 * zeta * m.omega * omega, 2);
   const qAmp = Fgen / Math.sqrt(denom);
-  const c = 2 * zeta * m.omega * m.gamma * m.gamma;
-  return 0.25 * c * qAmp * qAmp * omega * omega;
+  const c = 2 * zeta * m.omega;
+  return 0.5 * c * qAmp * qAmp * omega * omega;
 }
 
 /** Un paso RK4 de tamaño fijo sobre y = [q, qd]. */

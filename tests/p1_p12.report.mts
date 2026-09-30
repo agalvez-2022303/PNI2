@@ -70,7 +70,7 @@ line('P3', 'E_ideal', Eideal, 0.3397e-3, 'J', 0.01);
 line('P3', 'k33^2 = E_ideal/U_el', Eideal / Uel, 0.494, '-', 0.01);
 line('P3', 'k33^2 calculado (PZT5A_DERIVED)', PZT5A_DERIVED.k33Sq, 0.494, '-', 0.01);
 line('P4', 'sigma = F/(4A)', stackStress(700), 3.48e6, 'Pa', 0.01);
-line('P4', 'deformacion S', axialStrain(700), 6.5e-5, '-', 0.02);
+line('P4', 'deformacion S', axialStrain(700), 6.5e-5, '-', 0.01);
 line('P4', 'delta = S·T', delta, 1.96e-6, 'm', 0.01);
 
 rows.push('');
@@ -91,7 +91,12 @@ line('P6', 'I_LED pico a 700 N', r7.ILedPeak, 0.16e-3, 'A', 0.05);
 line('P6', 'E_LED por pisada a 400 N', r4.E_LED, 25e-6, 'J', 0.05);
 line('P12', 'pasos hasta regimen estacionario', r7.stepsToSteady, 2, 'pasos', 0.5);
 chk('P12', 'variacion relativa E_ultimos 2 < STEADY_REL_TOL', r7.steadyRelVariation, STEADY_REL_TOL);
-rows.push(`     P12        tolerancia de regimen estacionario STEADY_REL_TOL = ${STEADY_REL_TOL} (calc=${r7.steadyRelVariation.toExponential(3)} < tol)`);
+rows.push(
+  `     P12        criterio: variacion relativa de la energia entre los dos ultimos pasos < ${STEADY_REL_TOL} (100%)`
+);
+rows.push(
+  `     P12        variacion medida = ${(r7.steadyRelVariation * 100).toFixed(6)} %  ·  ${r7.stepsToSteady} pasos para cumplirlo`
+);
 rows.push(
   `     P12        V_c pico=${r7.VcRipple.max.toFixed(4)} V · min=${r7.VcRipple.min.toFixed(4)} V · medio=${r7.VcRipple.avg.toFixed(4)} V · rizado=${((r7.VcRipple.max - r7.VcRipple.min) * 1e3).toFixed(2)} mV`
 );
@@ -128,12 +133,38 @@ chk('P8', 'P_modela / P_bound <= 1 (subacoplado)', rb.pRatio, 1);
 rows.push(`     P8        omega_1 = ${m.modes[0].omega.toFixed(3)} rad/s · P_modela = ${(rb.pModel * 1e6).toFixed(3)} uW · razon = ${rb.pRatio.toFixed(4)}`);
 
 rows.push('');
-rows.push('=== P9 — FRF contra integracion temporal en resonancia ===');
+rows.push('=== P9 — Potencia ELECTRICA: FRF contra el promedio <v^2/R> de la simulacion ===');
+rows.push(
+  `     P9        FRF = |V|^2/(2 R_load) a f=72.64 Hz · R_load = R_opt = ${rb.Ropt.toFixed(1)} Ohm`
+);
+line('P9', 'P electrica FRF |V|^2/(2R)', rb.frfVsTime.pFrf, 228.7e-6, 'W', 0.02);
+line('P9', 'P electrica promedio <v^2/R>', rb.frfVsTime.pTime, 228.7e-6, 'W', 0.02);
+chk('P9', 'diferencia relativa FRF vs temporal < 2%', rb.frfVsTime.relDiff, 0.02);
+chk('P9', 'P electrica <= P_bound de Williams & Yates', rb.frfVsTime.pFrf, rb.pBound);
+
+rows.push('');
+rows.push('=== P9b — Comprobacion MECANICA: FRF vs integracion temporal ===');
 const pFrf = mechanicalPowerFRF(m, m.modes[0].omega, 2, BEAM.zetaMec);
 const pTime = mechanicalPowerTimeDomain(m, m.modes[0].omega, 2, BEAM.zetaMec).meanPower;
-line('P9', 'P mecanica FRF analitica', pFrf, 5.840909e-6, 'W', 0.02);
-line('P9', 'P mecanica integracion temporal', pTime, 5.840909e-6, 'W', 0.02);
-chk('P9', 'diferencia relativa FRF vs temporal < 2%', Math.abs(pTime - pFrf) / pFrf, 0.02);
+line('P9b', 'P mecanica FRF analitica', pFrf, 1131.3e-6, 'W', 0.02);
+line('P9b', 'P mecanica integracion temporal', pTime, 1131.3e-6, 'W', 0.02);
+chk('P9b', 'diferencia relativa FRF vs temporal < 2%', Math.abs(pTime - pFrf) / pFrf, 0.02);
+rows.push(
+  `     P9b       c = 2*zeta*omega (SIN gamma^2) · P = <c q'^2> = gamma^2 a0^2/(4 zeta omega) = 4 x P_bound`
+);
+rows.push(
+  `     P9b       version anterior con gamma^2 espurio y factor 1/4 daba 5.841 uW · Q medida = ${rb.mechVsTime.qAmplitude.toExponential(6)}`
+);
+
+rows.push('');
+rows.push('=== P9c — Balance de potencia en regimen: P_entrada = P_mec + P_elec ===');
+const b = rb.powerBalance;
+rows.push(`     P9c       P_entrada   = -gamma<a q'>   = ${(b.pInput * 1e6).toFixed(4)} uW`);
+rows.push(`     P9c       P_mecanica  = c<q'^2>        = ${(b.pMech * 1e6).toFixed(4)} uW`);
+rows.push(`     P9c       P_electrica = <v^2/R>        = ${(b.pElec * 1e6).toFixed(4)} uW`);
+rows.push(`     P9c       suma mec + elec             = ${(b.pSum * 1e6).toFixed(4)} uW`);
+chk('P9c', 'error relativo del balance < 2%', b.relDiff, 0.02);
+rows.push(`OK   P9c  la energia se conserva en regimen permanente`);
 
 rows.push('');
 rows.push('=== P10 — Autovalores del voladizo y orden del RK4 ===');

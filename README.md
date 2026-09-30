@@ -140,15 +140,24 @@ los 3 primeros modos.
 | FRF (V, P) | modelo modal acoplado, `P = |V|²/(2R)` | `core/beam.ts` |
 | Masa modal efectiva | `m₁ = γ₁²`, `γ₁ = ∫m'φ₁ dx + M_t·φ₁(L)` con `φ` normalizada en masa | `core/beam.ts` |
 | Cota de potencia | `P_max = m₁·a0² / (16 · ζ_mec · ω_1)` (Williams-Yates) | `core/beam.ts` |
+| Potencia mecánica disipada | `P = ⟨c·q̇²⟩ = ½·c·\|q\|²ω²`, con `c = 2ζω₁` (modal normalizada en masa) | `core/beam.ts` |
+
+Con la modal normalizada en masa (`m_r = 1`) el amortiguador es `c = 2ζω₁`: **no lleva γ²**. En
+resonancia la disipación mecánica vale `P = γ₁²a0²/(4ζω₁)`, y la relación clásica
+`P_e,max = P/4` reproduce exactamente la cota de Williams-Yates `γ₁²a0²/(16ζω₁)`. Esa coherencia
+entre P8 y P9b es la que fija el factor, y ambas cifras están verificadas contra la integración
+temporal directa.
 
 La respuesta temporal del modo dominante se integra con RK4 adaptativo (estado `[η, η̇, v]`) a la
-frecuencia elegida por el usuario, no en el pico de la FRF.
+frecuencia elegida por el usuario, no en el pico de la FRF. Los promedios de potencia (P9, P9b,
+P9c) usan RK4 de paso fijo con 2000 muestras por ciclo, descartando 80 ciclos de transitorio y
+promediando 20 ciclos completos, de modo que la ventana sea un número entero de periodos.
 
 ---
 
 ## Validación (pruebas Vitest)
 
-**106 pruebas, todas en verde** (`units.test.ts` 16, `beam.test.ts` 31, `tile.test.ts` 59).
+**111 pruebas, todas en verde** (`units.test.ts` 16, `beam.test.ts` 36, `tile.test.ts` 59).
 
 ### Baldosa (modo 33) — PZT-5A
 
@@ -185,7 +194,9 @@ energía **decrece**, así que `E` no es monótona en `V_c`.
 | P7 | `R_opt` | — | 68.81 kΩ |
 | P8 | `m₁ = γ₁²` (masa modal del modo 1) | 10.33 g | 10.3258 g |
 | P8 | `P_bound` (Williams-Yates) | 282.9 µW | 282.83 µW |
-| P9 | FRF vs temporal | — | 5.840909e-6 vs 5.838649e-6 W (0.04 %) |
+| P9 | potencia eléctrica: FRF `\|V\|²/(2R)` vs `⟨v²/R⟩` temporal | < 2 % | 228.71 vs 229.84 µW (0.49 %) |
+| P9b | potencia mecánica: FRF vs integración temporal | < 2 % | 1131.32 vs 1130.88 µW (0.04 %) |
+| P9c | balance `P_in = P_mec + P_elec` en régimen | < 2 % | 476.64 = 246.80 + 229.84 µW (0.0000 %) |
 | P10 | RK4: convergencia y orden | orden 4 | comprobado con *step-doubling* |
 
 ### Circuito y estabilidad (P6, P12)

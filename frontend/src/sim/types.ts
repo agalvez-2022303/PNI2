@@ -118,8 +118,18 @@ export interface BeamResult {
   peakFreq: number;
   frf: { f: number[]; P: number[]; V: number[] };
   pVsR: { R: number[]; P: number[] };
-  /** FRF frente a integración temporal en resonancia (P9). */
+  /** P9 — potencia eléctrica: FRF analítica frente al promedio temporal ⟨v²/R⟩. */
   frfVsTime: { pFrf: number; pTime: number; relDiff: number };
+  /** P9b — comprobación mecánica: FRF frente a integración temporal del amortiguador. */
+  mechVsTime: { pFrf: number; pTime: number; relDiff: number; qAmplitude: number };
+  /** P9c — balance de potencia en régimen: P_entrada = P_mecánica + P_eléctrica. */
+  powerBalance: {
+    pInput: number;
+    pMech: number;
+    pElec: number;
+    pSum: number;
+    relDiff: number;
+  };
   timeSeries: { t: number[]; v: number[]; P: number[]; tip: number[] };
   modeShapes: { x: number[]; y: number[] }[];
 }
