@@ -1,6 +1,13 @@
-/** Modelo 3D de la viga bimorfa en voladizo (sustrato central, piezo arriba/abajo, electrodos, masa de punta). */
+/**
+ * Modelo 3D de la viga bimorfa en voladizo.
+ *
+ * Geometría fija: sustrato de latón, una capa piezoeléctrica encima y otra
+ * debajo, electrodos como líneas y masa de punta. No hay parámetros de
+ * geometría porque el modelo es de referencia (core/referenceModel.ts).
+ */
 import * as THREE from 'three';
-import { BeamParams, BeamResult } from '../sim/types';
+import { BeamResult } from '../sim/types';
+import { BEAM } from '../core/referenceModel';
 
 const MM = 1000;
 
@@ -9,13 +16,12 @@ export interface BeamMesh {
   radius: number;
   center: THREE.Vector3;
   setShape: (shape: { x: number[]; y: number[] }) => void;
-  update: (amp: number, phase: number, scaleFactor: number) => void;
+  update: (amp: number, phase: number, exaggeration: number) => void;
 }
 
 interface Layer {
   mesh: THREE.Mesh;
   base: Float32Array;
-  yOffset: number;
 }
 
 function makeLayer(L: number, thickness: number, width: number, yOffset: number, mat: THREE.Material): Layer {
@@ -28,15 +34,15 @@ function makeLayer(L: number, thickness: number, width: number, yOffset: number,
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const base = new Float32Array(pos.array.length);
   base.set(pos.array as Float32Array);
-  return { mesh, base, yOffset };
+  return { mesh, base };
 }
 
-export function buildBeamModel3D(p: BeamParams, result: BeamResult): BeamMesh {
+export function buildBeamModel3D(result: BeamResult): BeamMesh {
   const group = new THREE.Group();
-  const L = p.length * MM;
-  const b = p.width * MM;
-  const tS = p.tSub * MM;
-  const tP = p.tPiezo * MM;
+  const L = BEAM.length * MM;
+  const b = BEAM.width * MM;
+  const tS = BEAM.tSub * MM;
+  const tP = BEAM.tPiezo * MM;
 
   const subMat = new THREE.MeshStandardMaterial({ color: 0xb08d57, metalness: 0.85, roughness: 0.35 });
   const piezoMat = () =>
@@ -61,7 +67,7 @@ export function buildBeamModel3D(p: BeamParams, result: BeamResult): BeamMesh {
   group.add(clamp);
 
   // Masa de punta
-  const tipSize = Math.max(6, Math.cbrt(Math.max(p.tipMass, 1e-4) / 8000) * MM);
+  const tipSize = Math.max(6, Math.cbrt(Math.max(BEAM.tipMass, 1e-4) / 8000) * MM);
   const tipMat = new THREE.MeshStandardMaterial({ color: 0xff6b6b, metalness: 0.6, roughness: 0.4 });
   const tip = new THREE.Mesh(new THREE.BoxGeometry(tipSize, tipSize, Math.min(b, tipSize * 1.5)), tipMat);
   tip.castShadow = true;
@@ -89,8 +95,10 @@ export function buildBeamModel3D(p: BeamParams, result: BeamResult): BeamMesh {
     shapeY = shape.y;
   };
 
-  const update = (amp: number, phase: number, scaleFactor: number) => {
-    const tipDisp = (L * 0.16) * (scaleFactor / 1500);
+  const update = (amp: number, phase: number, exaggeration: number) => {
+    // exaggeration es el factor fijo y visible del render (C8): la deformada
+    // modal es adimensional y se dibuja escalada por ese mismo factor.
+    const tipDisp = (L * 0.16) * (exaggeration / 5000);
     const a = amp * tipDisp * Math.sin(phase);
     for (const l of layers) {
       const pos = l.mesh.geometry.attributes.position as THREE.BufferAttribute;
@@ -107,6 +115,6 @@ export function buildBeamModel3D(p: BeamParams, result: BeamResult): BeamMesh {
     tip.position.set(L + tipSize / 2, tipY, 0);
   };
 
-  update(0, 0, p.scaleFactor);
+  update(0, 0, 5000);
   return { group, radius, center, setShape, update };
 }

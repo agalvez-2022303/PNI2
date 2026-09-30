@@ -1,6 +1,6 @@
-/** Exportadores de resultados: CSV y JSON. */
+/** Exportadores de resultados: CSV y JSON (sin datos de materiales ni geometría). */
 import { triggerDownload } from '../render/ioModel';
-import { TileParams, TileResult, BeamParams, BeamResult } from '../sim/types';
+import { TileInputs, TileResult, BeamInputs, BeamResult } from '../sim/types';
 
 export function exportJSON(obj: any, filename: string) {
   const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
@@ -16,7 +16,7 @@ function csvFromColumns(headers: string[], columns: number[][]): string {
   return rows.join('\n');
 }
 
-export function exportTileCSV(params: TileParams, result: TileResult) {
+export function exportTileCSV(inputs: TileInputs, result: TileResult) {
   const s = result.series;
   const csv = csvFromColumns(
     ['t_s', 'F_N', 'Vp_V', 'Vcs_V', 'I_A', 'P_W', 'E_stored_J'],
@@ -25,29 +25,39 @@ export function exportTileCSV(params: TileParams, result: TileResult) {
   triggerDownload(new Blob([csv], { type: 'text/csv' }), 'baldosa_series_temporal.csv');
 }
 
-export function exportTileSummary(params: TileParams, result: TileResult) {
+export function exportTileSummary(inputs: TileInputs, result: TileResult) {
   exportJSON(
     {
       simulacion: 'Baldosa piezoeléctrica de pisada (modo 33)',
-      parametros: params,
+      modelo: 'PZT-5H · referencia fija (core/referenceModel.ts)',
+      entradas: inputs,
       resultados: {
         Cp_F: result.Cp,
+        CpStack_F: result.CpStack,
         Q_C: result.Q,
         Voc_V: result.Voc,
-        energiaPorCiclo_J: result.energyPerCycle,
-        energiaCosechada_J: result.energyHarvested,
-        potenciaMedia_W: result.avgPower,
-        eficienciaTeorica: result.etaTheoretical,
-        eficienciaRealista: result.etaRealistic,
-        acoplamientoMaximo_k33_2: result.maxCoupling,
-        esfuerzoPorDisco_Pa: result.stress,
+        energiaIdeal_J: result.energyIdeal,
+        U_el_J: result.U_el,
+        energiaCosechada_J: result.E_harvested,
+        energiaLED_J: result.E_LED,
+        cadenaEnergia_J: result.chain,
+        tensionCondensador_V: result.VcSteady,
+        rizado_Vc_V: result.VcRipple,
+        corrientePicoLED_A: result.ILedPeak,
+        potenciaMediaLED_W: result.avgPowerLED,
+        acoplamientoElemento_k2: result.k2Elemento,
+        eficienciaCerámica: result.etaCeramic,
+        eficienciaMódulo: result.etaModulo,
+        esfuerzoPorStack_Pa: result.stress,
+        deformacionUniaxial: result.strain,
+        aplastamiento_m: result.compression,
       },
     },
     'baldosa_resumen.json'
   );
 }
 
-export function exportBeamCSV(params: BeamParams, result: BeamResult) {
+export function exportBeamCSV(inputs: BeamInputs, result: BeamResult) {
   const csv = csvFromColumns(
     ['f_Hz', 'P_W', 'V_V'],
     [result.frf.f, result.frf.P, result.frf.V]
@@ -55,11 +65,12 @@ export function exportBeamCSV(params: BeamParams, result: BeamResult) {
   triggerDownload(new Blob([csv], { type: 'text/csv' }), 'viga_frf.csv');
 }
 
-export function exportBeamSummary(params: BeamParams, result: BeamResult) {
+export function exportBeamSummary(inputs: BeamInputs, result: BeamResult) {
   exportJSON(
     {
-      simulacion: 'Viga bimorfa en voladizo (modo 31, Erturk-Inman)',
-      parametros: params,
+      simulacion: 'Viga bimorfa en voladizo (modo 31)',
+      modelo: 'PZT-5H sobre latón · referencia fija (core/referenceModel.ts)',
+      entradas: inputs,
       resultados: {
         modos_Hz: result.modes.map((m) => m.freq),
         fnSDOF_Hz: result.fnSDOF,
@@ -69,10 +80,11 @@ export function exportBeamSummary(params: BeamParams, result: BeamResult) {
         ejeNeutro_m: result.neutralAxis,
         Cp_F: result.Cp,
         Ropt_ohm: result.Ropt,
-        pMaxWilliamsYates_W: result.pMaxWilliamsYates,
-        pRealista_W: result.pRealistic,
-        pModeloPico_W: result.pModelPeak,
+        cotaWilliamsYates_W: result.pBound,
+        pModelo_W: result.pModel,
+        razonModeloCota: result.pRatio,
         freqPico_Hz: result.peakFreq,
+        frfVsTiempo: result.frfVsTime,
       },
     },
     'viga_resumen.json'

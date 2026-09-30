@@ -1,163 +1,216 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Material, DEFAULT_MATERIALS } from '../core/materials';
-import { TileParams, BeamParams, TileResult, BeamResult } from '../sim/types';
-import { DEFAULT_TILE, DEFAULT_BEAM } from '../sim/defaults';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { TileInputs, BeamInputs, TileResult, BeamResult } from '../sim/types';
+import { DEFAULT_TILE_INPUTS, DEFAULT_BEAM_INPUTS, clampTileInputs, clampBeamInputs } from '../sim/defaults';
 import { solveTile, solveBeam } from '../sim/solverClient';
-
-const LS_MATERIALS = 'piezolab.materials.v1';
-const LS_TILE = 'piezolab.tile.v1';
-const LS_BEAM = 'piezolab.beam.v1';
-
-function load<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return { ...(fallback as any), ...JSON.parse(raw) };
-  } catch {
-    return fallback;
-  }
-}
-function loadArr(key: string, fallback: Material[]): Material[] {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) && arr.length ? arr : fallback;
-  } catch {
-    return fallback;
-  }
-}
+import { saveRun, listRuns, deleteRun, StoredRun } from '../sim/storage';
+import { BEAM, INPUTS } from '../core/referenceModel';
 
 export interface TileSnapshot {
-  params: TileParams;
+  inputs: TileInputs;
   result: TileResult;
   label: string;
 }
 export interface BeamSnapshot {
-  params: BeamParams;
+  inputs: BeamInputs;
   result: BeamResult;
   label: string;
 }
 
 interface AppCtx {
-  materials: Material[];
-  piezos: Material[];
-  substrates: Material[];
-  addMaterial: (m: Material) => void;
-  updateMaterial: (id: string, patch: Partial<Material>) => void;
-  removeMaterial: (id: string) => void;
-  resetMaterials: () => void;
-  replaceMaterials: (list: Material[]) => void;
-
-  tileParams: TileParams;
-  patchTile: (p: Partial<TileParams>) => void;
+  /** Única entrada editable de la baldosa: F_max y cadencia. */
+  tileInputs: TileInputs;
+  patchTile: (p: Partial<TileInputs>) => void;
   tileResult: TileResult | null;
   tileBusy: boolean;
   tileCompare: TileSnapshot | null;
   saveTileCompare: () => void;
   clearTileCompare: () => void;
 
-  beamParams: BeamParams;
-  patchBeam: (p: Partial<BeamParams>) => void;
+  /** Única entrada editable de la viga: a0 y f_exc. */
+  beamInputs: BeamInputs;
+  patchBeam: (p: Partial<BeamInputs>) => void;
   beamResult: BeamResult | null;
   beamBusy: boolean;
   beamCompare: BeamSnapshot | null;
   saveBeamCompare: () => void;
   clearBeamCompare: () => void;
+
+  /** Corridas guardadas en IndexedDB (nunca localStorage). */
+  runs: StoredRun[];
+  reloadRuns: () => Promise<void>;
+  archiveCurrent: () => Promise<void>;
+  removeRun: (id: number) => Promise<void>;
 }
 
 const Ctx = createContext<AppCtx | null>(null);
 
+/** Resumen numérico de una corrida, sin las trazas pesadas. */
+const TILE_SUMMARY: (keyof TileResult & string)[] = [
+  'Cp',
+  'Q',
+  'Voc',
+  'energyIdeal',
+  'U_el',
+  'E_harvested',
+  'E_LED',
+  'stress',
+  'strain',
+  'compression',
+  'VcSteady',
+  'ILedPeak',
+  'avgPowerLED',
+];
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [materials, setMaterials] = useState<Material[]>(() => loadArr(LS_MATERIALS, DEFAULT_MATERIALS));
-  const [tileParams, setTileParams] = useState<TileParams>(() => load(LS_TILE, DEFAULT_TILE));
-  const [beamParams, setBeamParams] = useState<BeamParams>(() => load(LS_BEAM, DEFAULT_BEAM));
+  const [tileInputs, setTileInputs] = useState<TileInputs>(DEFAULT_TILE_INPUTS);
+  const [beamInputs, setBeamInputs] = useState<BeamInputs>(DEFAULT_BEAM_INPUTS);
   const [tileResult, setTileResult] = useState<TileResult | null>(null);
   const [beamResult, setBeamResult] = useState<BeamResult | null>(null);
   const [tileBusy, setTileBusy] = useState(false);
   const [beamBusy, setBeamBusy] = useState(false);
   const [tileCompare, setTileCompare] = useState<TileSnapshot | null>(null);
   const [beamCompare, setBeamCompare] = useState<BeamSnapshot | null>(null);
+  const [runs, setRuns] = useState<StoredRun[]>([]);
 
-  useEffect(() => localStorage.setItem(LS_MATERIALS, JSON.stringify(materials)), [materials]);
-  useEffect(() => localStorage.setItem(LS_TILE, JSON.stringify(tileParams)), [tileParams]);
-  useEffect(() => localStorage.setItem(LS_BEAM, JSON.stringify(beamParams)), [beamParams]);
+  const reloadRuns = useCallback(async () => {
+    try {
+      setRuns(await listRuns());
+    } catch {
+      setRuns([]);
+    }
+  }, []);
 
-  const piezos = useMemo(() => materials.filter((m) => m.kind === 'piezo'), [materials]);
-  const substrates = useMemo(() => materials.filter((m) => m.kind === 'substrate'), [materials]);
-
-  const tileTimer = useRef<any>(null);
   useEffect(() => {
-    const piezo = materials.find((m) => m.id === tileParams.piezoId) || piezos[0];
-    if (!piezo) return;
+    void reloadRuns();
+  }, [reloadRuns]);
+
+  // El modelo es fijo: cualquier cambio de entrada dispara un recálculo, sin
+  // dependencia de materiales ni geometría.
+  const tileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
     setTileBusy(true);
-    clearTimeout(tileTimer.current);
+    if (tileTimer.current) clearTimeout(tileTimer.current);
     tileTimer.current = setTimeout(() => {
-      solveTile(tileParams, piezo).then((r) => {
+      solveTile(tileInputs).then((r) => {
         setTileResult(r);
         setTileBusy(false);
       });
     }, 90);
-    return () => clearTimeout(tileTimer.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tileParams, materials]);
+    return () => {
+      if (tileTimer.current) clearTimeout(tileTimer.current);
+    };
+  }, [tileInputs]);
 
-  const beamTimer = useRef<any>(null);
+  const beamTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const piezo = materials.find((m) => m.id === beamParams.piezoId) || piezos[0];
-    const sub = materials.find((m) => m.id === beamParams.substrateId) || substrates[0];
-    if (!piezo || !sub) return;
     setBeamBusy(true);
-    clearTimeout(beamTimer.current);
+    if (beamTimer.current) clearTimeout(beamTimer.current);
     beamTimer.current = setTimeout(() => {
-      solveBeam(beamParams, piezo, sub).then((r) => {
+      solveBeam(beamInputs).then((r) => {
         setBeamResult(r);
         setBeamBusy(false);
       });
     }, 90);
-    return () => clearTimeout(beamTimer.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [beamParams, materials]);
+    return () => {
+      if (beamTimer.current) clearTimeout(beamTimer.current);
+    };
+  }, [beamInputs]);
 
-  const value: AppCtx = {
-    materials,
-    piezos,
-    substrates,
-    addMaterial: (m) => setMaterials((xs) => [...xs, m]),
-    updateMaterial: (id, patch) =>
-      setMaterials((xs) => xs.map((m) => (m.id === id ? { ...m, ...patch } : m))),
-    removeMaterial: (id) => setMaterials((xs) => xs.filter((m) => m.id !== id)),
-    resetMaterials: () => setMaterials(DEFAULT_MATERIALS),
-    replaceMaterials: (list) => setMaterials(list),
+  const archiveCurrent = useCallback(async () => {
+    const now = new Date().toISOString();
+    if (tileResult) {
+      const summary: Record<string, number> = {};
+      for (const k of TILE_SUMMARY) {
+        const v = tileResult[k];
+        if (typeof v === 'number') summary[k] = v;
+      }
+      await saveRun({
+        kind: 'tile',
+        createdAt: now,
+        inputs: { ...tileInputs },
+        summary,
+      });
+    }
+    if (beamResult) {
+      await saveRun({
+        kind: 'beam',
+        createdAt: now,
+        inputs: { ...beamInputs },
+        summary: {
+          EI: beamResult.EI,
+          keq: beamResult.keq,
+          meq: beamResult.meq,
+          fnSDOF: beamResult.fnSDOF,
+          Cp: beamResult.Cp,
+          Ropt: beamResult.Ropt,
+          pModel: beamResult.pModel,
+          pBound: beamResult.pBound,
+          pRatio: beamResult.pRatio,
+          peakFreq: beamResult.peakFreq,
+        },
+      });
+    }
+    await reloadRuns();
+  }, [tileResult, beamResult, tileInputs, beamInputs, reloadRuns]);
 
-    tileParams,
-    patchTile: (p) => setTileParams((s) => ({ ...s, ...p })),
-    tileResult,
-    tileBusy,
-    tileCompare,
-    saveTileCompare: () =>
-      tileResult &&
-      setTileCompare({
-        params: tileParams,
-        result: tileResult,
-        label: `${materials.find((m) => m.id === tileParams.piezoId)?.name} · N=${tileParams.nLayers}`,
-      }),
-    clearTileCompare: () => setTileCompare(null),
+  const removeRun = useCallback(
+    async (id: number) => {
+      await deleteRun(id);
+      await reloadRuns();
+    },
+    [reloadRuns]
+  );
 
-    beamParams,
-    patchBeam: (p) => setBeamParams((s) => ({ ...s, ...p })),
-    beamResult,
-    beamBusy,
-    beamCompare,
-    saveBeamCompare: () =>
-      beamResult &&
-      setBeamCompare({
-        params: beamParams,
-        result: beamResult,
-        label: `${materials.find((m) => m.id === beamParams.piezoId)?.name} · ${(beamParams.tipMass * 1000).toFixed(1)} g`,
-      }),
-    clearBeamCompare: () => setBeamCompare(null),
-  };
+  const value: AppCtx = useMemo(
+    () => ({
+      tileInputs,
+      patchTile: (p) => setTileInputs((s) => clampTileInputs({ ...s, ...p })),
+      tileResult,
+      tileBusy,
+      tileCompare,
+      saveTileCompare: () =>
+        tileResult &&
+        setTileCompare({
+          inputs: tileInputs,
+          result: tileResult,
+          label: `F_max = ${tileInputs.Fmax} N · ${tileInputs.cadence} pasos/min`,
+        }),
+      clearTileCompare: () => setTileCompare(null),
+
+      beamInputs,
+      patchBeam: (p) => setBeamInputs((s) => clampBeamInputs({ ...s, ...p })),
+      beamResult,
+      beamBusy,
+      beamCompare,
+      saveBeamCompare: () =>
+        beamResult &&
+        setBeamCompare({
+          inputs: beamInputs,
+          result: beamResult,
+          label: `a0 = ${beamInputs.a0} m/s² · f_exc = ${beamInputs.fExc} Hz`,
+        }),
+      clearBeamCompare: () => setBeamCompare(null),
+
+      runs,
+      reloadRuns,
+      archiveCurrent,
+      removeRun,
+    }),
+    [
+      tileInputs,
+      tileResult,
+      tileBusy,
+      tileCompare,
+      beamInputs,
+      beamResult,
+      beamBusy,
+      beamCompare,
+      runs,
+      reloadRuns,
+      archiveCurrent,
+      removeRun,
+    ]
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -167,3 +220,10 @@ export function useApp(): AppCtx {
   if (!c) throw new Error('useApp fuera de AppProvider');
   return c;
 }
+
+/** Rango de a0 mostrado en la interfaz, en m/s². */
+export const A0_RANGE = INPUTS.a0;
+/** Modo propio de referencia de la viga, para la etiqueta de la interfaz. */
+export const F1_REFERENCE = 72.633;
+/** Razón de amortiguamiento mecánica asumida. */
+export const ZETA_MEC = BEAM.zetaMec;

@@ -1,33 +1,20 @@
 /** Orquestación de la Simulación 2: viga bimorfa en voladizo (modo 31, dinámica). */
-import { Material } from '../core/materials';
 import {
   buildBeamModel,
+  referenceBeamGeom,
   BeamGeom,
   BeamModel,
   powerFRF,
   optimalResistance,
   williamsYatesPmax,
+  modalEffectiveMass,
+  mechanicalPowerFRF,
+  mechanicalPowerTimeDomain,
 } from '../core/beam';
 import { integrateAdaptive } from '../core/rk4';
 import { NUM } from '../core/config';
-import { BeamParams, BeamResult } from './types';
-
-function geomFrom(p: BeamParams, piezo: Material, substrate: Material, tipMass: number): BeamGeom {
-  return {
-    length: p.length,
-    width: p.width,
-    tSub: p.tSub,
-    tPiezo: p.tPiezo,
-    tipMass,
-    Ep: piezo.youngs,
-    Es: substrate.youngs,
-    rhoP: piezo.density,
-    rhoS: substrate.density,
-    epsR: piezo.epsR,
-    d31: piezo.d31,
-    k31: piezo.k33 * 0.5,
-  };
-}
+import { BEAM } from '../core/referenceModel';
+import { BeamInputs, BeamResult } from './types';
 
 function modeShape(model: BeamModel, idx: number, samples = 60): { x: number[]; y: number[] } {
   const m = model.modes[idx];
@@ -51,26 +38,38 @@ function modeShape(model: BeamModel, idx: number, samples = 60): { x: number[]; 
   return { x: xs, y: ys };
 }
 
-export function runBeam(p: BeamParams, piezo: Material, substrate: Material): BeamResult {
-  const model = buildBeamModel(geomFrom(p, piezo, substrate, p.tipMass), NUM.nModes);
-  const omega1 = model.modes[0]?.omega ?? 1;
+export function runBeam(p: BeamInputs): BeamResult {
+  // Toda la geometría y el material vienen del modelo de referencia.
+  const g: BeamGeom = referenceBeamGeom();
+  const model = buildBeamModel(g, NUM.nModes);
+  const omega1 = model.modes[0].omega;
   const Ropt = optimalResistance(omega1, model.Cp);
 
-  const mOsc = model.meq;
-  const pMax = williamsYatesPmax(mOsc, p.a0, p.zetaT, omega1);
-  const pRealistic = pMax * p.lossFactor;
+  // C4: cota de Williams & Yates con ζ mecánico FIJO, sin factor "realista".
+  // La masa modal efectiva sale de la forma modal del modo 1, no de una
+  // constante: modalEffectiveMass(model) = γ₁².
+  const pBound = williamsYatesPmax(model, p.a0);
 
-  // FRF: barrido de frecuencia
+  // Excitación a la frecuencia indicada por el usuario, no en el pico de la FRF.
+  const omegaExc = 2 * Math.PI * p.fExc;
+
+  // Potencia del modelo a R_opt, medida en la excitación pedida.
+  const pModel = powerFRF(model, omegaExc, p.a0, Ropt, BEAM.zetaMec);
+  const pRatio = pBound > 0 ? pModel / pBound : Number.NaN;
+
+  // Barrido de frecuencia alrededor de la excitación para la interfaz.
   const fArr: number[] = [];
   const pArr: number[] = [];
   const vArr: number[] = [];
   let pModelPeak = 0;
-  let peakFreq = model.modes[0]?.freq ?? 0;
+  let peakFreq = model.modes[0].freq;
+  const fMin = Math.max(5, p.fExc - 60);
+  const fMax = p.fExc + 60;
   for (let i = 0; i < NUM.frfPoints; i++) {
-    const f = p.freqMin + ((p.freqMax - p.freqMin) * i) / (NUM.frfPoints - 1);
+    const f = fMin + ((fMax - fMin) * i) / (NUM.frfPoints - 1);
     const omega = 2 * Math.PI * f;
-    const P = powerFRF(model, omega, p.a0, p.Rload, p.zetaT);
-    const V = Math.sqrt(2 * P * p.Rload); // amplitud a partir de P=|V|²/2R
+    const P = powerFRF(model, omega, p.a0, Ropt, BEAM.zetaMec);
+    const V = Math.sqrt(2 * P * Ropt);
     fArr.push(f);
     pArr.push(P);
     vArr.push(V);
@@ -80,32 +79,27 @@ export function runBeam(p: BeamParams, piezo: Material, substrate: Material): Be
     }
   }
 
-  // Potencia vs R_load (a resonancia del modo 1)
+  // Potencia vs R_load a la frecuencia de excitación.
   const rR: number[] = [];
   const rP: number[] = [];
   for (let i = 0; i < NUM.rSweepPoints; i++) {
     const frac = i / (NUM.rSweepPoints - 1);
-    const R = Ropt * Math.pow(10, -2 + 4 * frac); // 0.01·Ropt .. 100·Ropt
+    const R = Ropt * Math.pow(10, -2 + 4 * frac);
     rR.push(R);
-    rP.push(powerFRF(model, omega1, p.a0, R, p.zetaT));
+    rP.push(powerFRF(model, omegaExc, p.a0, R, BEAM.zetaMec));
   }
 
-  // Potencia vs masa de punta (reconstruye el modelo, potencia pico a su resonancia con R_opt)
-  const mM: number[] = [];
-  const mP: number[] = [];
-  const massMax = 30e-3;
-  for (let i = 0; i < NUM.massSweepPoints; i++) {
-    const mass = (massMax * i) / (NUM.massSweepPoints - 1);
-    const mdl = buildBeamModel(geomFrom(p, piezo, substrate, mass), NUM.nModes);
-    const w1 = mdl.modes[0].omega;
-    const R = optimalResistance(w1, mdl.Cp);
-    mM.push(mass);
-    mP.push(powerFRF(mdl, w1, p.a0, R, p.zetaT));
-  }
+  // P9: la FRF analítica en resonancia se contrasta con la integración
+  // temporal directa del mismo oscilador. Deben coincidir dentro del 2 %.
+  const pFrfMech = mechanicalPowerFRF(model, omega1, p.a0, BEAM.zetaMec);
+  const pTimeMech = mechanicalPowerTimeDomain(model, omega1, p.a0, BEAM.zetaMec).meanPower;
+  const frfVsTime = {
+    pFrf: pFrfMech,
+    pTime: pTimeMech,
+    relDiff: pFrfMech > 0 ? Math.abs(pTimeMech - pFrfMech) / pFrfMech : Number.NaN,
+  };
 
-  // Respuesta en el tiempo (modo dominante) en resonancia
-  const timeSeries = beamTimeResponse(model, p, peakFreq);
-
+  const timeSeries = beamTimeResponse(model, omegaExc, Ropt, p.a0);
   const modeShapes = model.modes.map((_, i) => modeShape(model, i));
 
   return {
@@ -117,29 +111,28 @@ export function runBeam(p: BeamParams, piezo: Material, substrate: Material): Be
     keq: model.keq,
     meq: model.meq,
     fnSDOF: model.fnSDOF,
+    modalMass1: modalEffectiveMass(model, 0),
     Cp: model.Cp,
     Ropt,
-    pMaxWilliamsYates: pMax,
-    pRealistic,
-    pModelPeak,
+    pModel,
+    pBound,
+    pRatio,
     peakFreq,
     frf: { f: fArr, P: pArr, V: vArr },
     pVsR: { R: rR, P: rP },
-    pVsMass: { m: mM, P: mP },
+    frfVsTime,
     timeSeries,
     modeShapes,
   };
 }
 
-/** Integra el modo dominante acoplado (RK4 adaptativo) hasta régimen permanente. */
-function beamTimeResponse(model: BeamModel, p: BeamParams, freqHz: number) {
+/** Integra el modo dominante acoplado (RK4 adaptativo) en la excitación pedida. */
+function beamTimeResponse(model: BeamModel, omega: number, R: number, a0: number) {
   const m = model.modes[0];
-  const omega = 2 * Math.PI * freqHz;
   const Cp = model.Cp;
-  const R = p.Rload;
-  const zeta = p.zetaT;
-  const a0 = p.a0;
-  // estado y=[η, η̇, v]
+  const zeta = BEAM.zetaMec;
+  const f = omega / (2 * Math.PI);
+  // y = [η, η̇, v]
   const deriv = (t: number, y: number[]): number[] => {
     const eta = y[0];
     const etaDot = y[1];
@@ -150,7 +143,7 @@ function beamTimeResponse(model: BeamModel, p: BeamParams, freqHz: number) {
     return [etaDot, etaDDot, vDot];
   };
   const cycles = 30;
-  const tEnd = cycles / freqHz;
+  const tEnd = cycles / f;
   const samples = integrateAdaptive(deriv, [0, 0, 0], 0, tEnd, {
     sampleEvery: tEnd / 800,
     relTol: 1e-5,

@@ -1,7 +1,18 @@
-/** Modelo 3D de la baldosa piezoeléctrica de pisada (placa superior, stack de discos, base, resortes). */
+/**
+ * Modelo 3D de la baldosa piezoeléctrica de pisada.
+ *
+ * C9: los discos del stack se dibujan PEGADOS, sin huecos, para que la altura
+ * renderizada sea exactamente T = 30 mm y no T + (n−1)·gap. Los electrodos se
+ * dibujan como LÍNEAS en las Interfaces entre discos, no como láminas que
+ * engordan el stack.
+ *
+ * C8: el color de cada disco sale del esfuerzo REAL σ = F/(4A) en el instante,
+ * no de una normalización ad hoc, y el factor de exageración es fijo y lo
+ * fija el solver (RENDER_EXAGGERATION).
+ */
 import * as THREE from 'three';
-import { heatColor } from './viewer';
-import { TileParams } from '../sim/types';
+import { STACK, ALERTS } from '../core/referenceModel';
+import { stackStress, stackCompression } from '../core/tile';
 
 const MM = 1000; // metros → milímetros (unidades de escena)
 
@@ -9,7 +20,8 @@ export interface TileMesh {
   group: THREE.Group;
   radius: number;
   center: THREE.Vector3;
-  update: (forceNorm: number, scaleFactor: number) => void;
+  /** f [N] real, no normalizado: el color y la compresión salen de σ. */
+  update: (Fmax: number, exaggeration: number) => void;
 }
 
 function springCurve(height: number, coils: number, r: number): THREE.CatmullRomCurve3 {
@@ -23,15 +35,21 @@ function springCurve(height: number, coils: number, r: number): THREE.CatmullRom
   return new THREE.CatmullRomCurve3(pts);
 }
 
-export function buildTileModel(p: TileParams): TileMesh {
+/** Color por esfuerzo real: azul (0) → rojo (límite de 100 MPa). */
+export function stressColor(sigma: number): THREE.Color {
+  const f = Math.max(0, Math.min(1, sigma / ALERTS.sigmaLimit));
+  return new THREE.Color().setHSL((1 - f) * 0.6, 0.85, 0.28 + 0.22 * f);
+}
+
+export function buildTileModel(): TileMesh {
   const group = new THREE.Group();
-  const D = p.diameter * MM;
-  const t = p.thickness * MM;
-  const n = p.nLayers;
+  const D = STACK.diameter * MM;
+  const t = STACK.layerThickness * MM;
+  const n = STACK.nLayers;
   const plateSize = Math.max(D * 2.2, 40);
   const plateH = 4;
-  const gap = t * 0.15;
-  const stackH = n * t + (n - 1) * gap;
+  // C9: sin hueco entre discos. stackH es exactamente T en milímetros.
+  const stackH = n * t;
   const baseY = plateH;
 
   // Placa base
@@ -42,7 +60,7 @@ export function buildTileModel(p: TileParams): TileMesh {
   base.receiveShadow = true;
   group.add(base);
 
-  // Discos piezoeléctricos
+  // Discos piezoeléctricos, contiguos
   const discs: THREE.Mesh[] = [];
   const discGroup = new THREE.Group();
   discGroup.position.y = baseY;
@@ -55,20 +73,29 @@ export function buildTileModel(p: TileParams): TileMesh {
       emissiveIntensity: 0.6,
     });
     const disc = new THREE.Mesh(new THREE.CylinderGeometry(D / 2, D / 2, t, 48), mat);
-    disc.position.y = i * (t + gap) + t / 2;
+    disc.position.y = i * t + t / 2;
     disc.castShadow = true;
     disc.receiveShadow = true;
-    // electrodos (finas láminas doradas)
-    const elec = new THREE.Mesh(
-      new THREE.CylinderGeometry(D / 2 + 0.15, D / 2 + 0.15, t * 0.08, 48),
-      new THREE.MeshStandardMaterial({ color: 0xffcf6b, metalness: 0.9, roughness: 0.25 })
-    );
-    elec.position.y = t / 2;
-    disc.add(elec);
     discs.push(disc);
     discGroup.add(disc);
   }
   group.add(discGroup);
+
+  // C9: electrodos como LÍNEAS (anillos) en las n+1 interfaces. No son
+  // cilindros: no añaden espesor, sólo marcan dónde está el electrodo.
+  const electrodeMat = new THREE.LineBasicMaterial({ color: 0xffcf6b, transparent: true, opacity: 0.95 });
+  const electrodes = new THREE.Group();
+  electrodes.position.y = baseY;
+  for (let i = 0; i <= n; i++) {
+    const ring: THREE.Vector3[] = [];
+    const seg = 64;
+    for (let k = 0; k <= seg; k++) {
+      const a = (k / seg) * Math.PI * 2;
+      ring.push(new THREE.Vector3(Math.cos(a) * (D / 2 + 0.25), i * t, Math.sin(a) * (D / 2 + 0.25)));
+    }
+    electrodes.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring), electrodeMat));
+  }
+  group.add(electrodes);
 
   // Placa superior
   const topMat = new THREE.MeshStandardMaterial({ color: 0x4a5568, metalness: 0.7, roughness: 0.35 });
@@ -99,21 +126,23 @@ export function buildTileModel(p: TileParams): TileMesh {
     group.add(spring);
   }
 
-  const centerY = topRestY / 2;
-  const center = new THREE.Vector3(0, centerY, 0);
+  const center = new THREE.Vector3(0, topRestY / 2, 0);
   const radius = Math.max(plateSize, topRestY);
 
-  const update = (forceNorm: number, scaleFactor: number) => {
-    const f = Math.max(0, Math.min(1, forceNorm));
-    const maxComp = Math.min(0.45, (scaleFactor / 100) * 0.35);
-    const comp = f * maxComp;
-    // compresión visible del stack
-    discGroup.scale.y = 1 - comp;
-    top.position.y = baseY + stackH * (1 - comp) + plateH / 2;
-    // resortes siguen la compresión
-    for (const s of springs) s.scale.y = 1 - comp;
-    // mapa de calor de esfuerzo sobre discos
-    const col = heatColor(f);
+  const update = (Fmax: number, exaggeration: number) => {
+    // C8: compresión proporcional al aplastamiento REAL δ, exagerada por el
+    // factor fijo del solver. δ_max = s33·σ·T.
+    const sigma = stackStress(Math.max(0, Fmax));
+    const delta = stackCompression(Math.max(0, Fmax), STACK.totalThickness);
+    // El aplastamiento visual es un porcentaje de la altura del stack, acotado
+    // para que la escena siga siendo legible.
+    const compVis = Math.min(0.35, (delta * exaggeration) / STACK.totalThickness);
+    discGroup.scale.y = 1 - compVis;
+    top.position.y = baseY + stackH * (1 - compVis) + plateH / 2;
+    for (const s of springs) s.scale.y = 1 - compVis;
+    electrodes.scale.y = 1 - compVis;
+    // Color por esfuerzo real en MPa.
+    const col = stressColor(sigma);
     for (const d of discs) {
       const m = d.material as THREE.MeshStandardMaterial;
       m.color.copy(col);
@@ -121,6 +150,9 @@ export function buildTileModel(p: TileParams): TileMesh {
     }
   };
 
-  update(0, p.scaleFactor);
+  update(0, 1);
   return { group, radius, center, update };
 }
+
+/** Factor de exageración por defecto si el solver aún no ha corrido. */
+export const DEFAULT_EXAGGERATION = 5000;

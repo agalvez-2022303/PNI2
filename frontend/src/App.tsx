@@ -1,16 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TileSim } from '@/ui/TileSim';
 import { BeamSim } from '@/ui/BeamSim';
-import { CadEditor } from '@/ui/CadEditor';
-import { MaterialsEditor } from '@/ui/MaterialsEditor';
 import { ReportTab } from '@/ui/ReportTab';
 import { useApp } from '@/ui/store';
-import { exportJSON } from '@/ui/exporters';
-import { Footprints, Activity, Boxes, Database, FileText, Zap, Cpu, Save, FolderOpen } from 'lucide-react';
+import { downloadArchive, importArchive } from '@/sim/storage';
+import { Footprints, Activity, FileText, Zap, Cpu, Save, FolderOpen, HardDriveDownload, HardDriveUpload } from 'lucide-react';
 
-type Tab = 'tile' | 'beam' | 'cad' | 'materials' | 'report';
+type Tab = 'tile' | 'beam' | 'report';
 
-const VALID: Tab[] = ['tile', 'beam', 'cad', 'materials', 'report'];
+const VALID: Tab[] = ['tile', 'beam', 'report'];
 function initialTab(): Tab {
   const h = (typeof window !== 'undefined' ? window.location.hash.replace('#', '') : '') as Tab;
   return VALID.includes(h) ? h : 'tile';
@@ -19,8 +17,6 @@ function initialTab(): Tab {
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'tile', label: 'Simulación 1 · Baldosa', icon: <Footprints size={15} /> },
   { id: 'beam', label: 'Simulación 2 · Viga', icon: <Activity size={15} /> },
-  { id: 'cad', label: 'Editor CAD', icon: <Boxes size={15} /> },
-  { id: 'materials', label: 'Materiales', icon: <Database size={15} /> },
   { id: 'report', label: 'Reporte', icon: <FileText size={15} /> },
 ];
 
@@ -41,29 +37,28 @@ export default function App() {
   }, []);
   const busy = (tab === 'tile' && app.tileBusy) || (tab === 'beam' && app.beamBusy);
 
-  const projFile = useRef<HTMLInputElement>(null);
-  const saveProject = () => {
-    exportJSON(
-      {
-        app: 'PiezoLab',
-        version: 1,
-        savedAt: new Date().toISOString(),
-        materials: app.materials,
-        tile: app.tileParams,
-        beam: app.beamParams,
-      },
-      'proyecto_piezolab.json'
+  const runsFile = useRef<HTMLInputElement>(null);
+  const [ioMsg, setIoMsg] = useState('');
+
+  const saveRuns = () => {
+    app.archiveCurrent().then(
+      () => setIoMsg('Corrida guardada en IndexedDB'),
+      () => setIoMsg('No se pudo guardar la corrida')
     );
   };
-  const loadProject = async (file: File) => {
+  const exportRuns = () => {
+    downloadArchive().then(
+      () => setIoMsg('Corridas exportadas'),
+      () => setIoMsg('No se pudieron exportar las corridas')
+    );
+  };
+  const importRuns = async (file: File) => {
     try {
-      const data = JSON.parse(await file.text());
-      if (data.app !== 'PiezoLab') throw new Error('Formato de proyecto no reconocido');
-      if (Array.isArray(data.materials)) app.replaceMaterials(data.materials);
-      if (data.tile) app.patchTile(data.tile);
-      if (data.beam) app.patchBeam(data.beam);
+      const { runs, validation } = await importArchive(await file.text());
+      await app.reloadRuns();
+      setIoMsg(`Importadas ${runs} corrida(s) y ${validation} validación(es)`);
     } catch (e) {
-      alert('No se pudo abrir el proyecto: ' + (e as Error).message);
+      setIoMsg('No se pudo importar: ' + (e as Error).message);
     }
   };
 
@@ -94,31 +89,42 @@ export default function App() {
           ))}
         </nav>
         <div className="spacer" />
-        <button className="btn sm ghost" onClick={saveProject} data-testid="project-save" title="Guardar proyecto (JSON)">
+        <button className="btn sm ghost" onClick={saveRuns} data-testid="runs-save" title="Guardar la corrida actual en IndexedDB">
           <Save size={14} /> Guardar
         </button>
-        <button className="btn sm ghost" onClick={() => projFile.current?.click()} data-testid="project-open" title="Abrir proyecto (JSON)">
-          <FolderOpen size={14} /> Abrir
+        <button className="btn sm ghost" onClick={exportRuns} data-testid="runs-export" title="Exportar corridas a JSON">
+          <HardDriveDownload size={14} /> Exportar
+        </button>
+        <button className="btn sm ghost" onClick={() => runsFile.current?.click()} data-testid="runs-import" title="Importar corridas desde JSON">
+          <FolderOpen size={14} /> Importar
         </button>
         <input
-          ref={projFile}
+          ref={runsFile}
           type="file"
           accept=".json"
           style={{ display: 'none' }}
-          data-testid="project-file"
-          onChange={(e) => e.target.files?.[0] && loadProject(e.target.files[0])}
+          data-testid="runs-file"
+          onChange={(e) => e.target.files?.[0] && importRuns(e.target.files[0])}
         />
         <span className="pill" data-testid="worker-status">
           <Cpu size={12} style={{ marginRight: 5, verticalAlign: 'middle' }} />
           {busy ? 'calculando…' : 'solver listo'}
         </span>
+        <span className="pill" data-testid="storage-status">
+          <HardDriveUpload size={12} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+          IndexedDB · {app.runs.length} corrida{app.runs.length === 1 ? '' : 's'}
+        </span>
         <span className="pill">SI · RK4 adaptativo</span>
       </header>
 
+      {ioMsg && (
+        <div className="io-status" role="status" data-testid="io-status">
+          {ioMsg}
+        </div>
+      )}
+
       {tab === 'tile' && <TileSim />}
       {tab === 'beam' && <BeamSim />}
-      {tab === 'cad' && <CadEditor />}
-      {tab === 'materials' && <MaterialsEditor />}
       {tab === 'report' && <ReportTab />}
     </div>
   );

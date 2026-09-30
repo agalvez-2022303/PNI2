@@ -12,7 +12,8 @@
  * Referencias: Erturk & Inman (2011), "Piezoelectric Energy Harvesting";
  * Williams & Yates (1996); IEEE Std 176-1987.
  */
-import { PHYS, CANTILEVER_EFFECTIVE_MASS_FRACTION as MEFF } from './config';
+import { CANTILEVER_EFFECTIVE_MASS_FRACTION as MEFF } from './config';
+import { BRASS, BEAM, EPS33_S, PZT5A, PZT5A_DERIVED } from './referenceModel';
 
 export interface Layer {
   thickness: number;
@@ -156,6 +157,13 @@ export interface BeamModel {
   vartheta: number;
 }
 
+/**
+ * Geometría y material de la viga. Todos los campos los fija el modelo de
+ * referencia; se mantienen como interfaz porque `buildBeamModel` es una
+ * función pura y así se puede verificar contra las pruebas de referencia.
+ * Corrección C3: `Ep` es Y11 = 1/s11E (modo 31), nunca Y33.
+ * Corrección C6: `k31` es sqrt(k31Sq) calculado desde d31, s11E y ε33^T.
+ */
 export interface BeamGeom {
   length: number;
   width: number;
@@ -166,9 +174,27 @@ export interface BeamGeom {
   Es: number;
   rhoP: number;
   rhoS: number;
-  epsR: number;
+  epsS: number; // ε33^S [F/m], para C_p
   d31: number;
   k31: number;
+}
+
+/** Geometría y material de la viga tal y como los define el modelo de referencia. */
+export function referenceBeamGeom(): BeamGeom {
+  return {
+    length: BEAM.length,
+    width: BEAM.width,
+    tSub: BEAM.tSub,
+    tPiezo: BEAM.tPiezo,
+    tipMass: BEAM.tipMass,
+    Ep: PZT5A_DERIVED.Y11, // Y11 = 1/s11E (modo 31)
+    Es: BRASS.Y,
+    rhoP: PZT5A.density,
+    rhoS: BRASS.density,
+    epsS: EPS33_S, // ε^S = ε^T(1 - k31²)
+    d31: PZT5A.d31,
+    k31: Math.sqrt(PZT5A_DERIVED.k31Sq), // derivado, no k33/2
+  };
 }
 
 /** Construye el modelo modal completo de la viga bimorfa (sustrato central, piezo arriba/abajo). */
@@ -218,9 +244,9 @@ export function buildBeamModel(g: BeamGeom, nModes: number): BeamModel {
     };
   });
 
-  // Capacitancia bimorfo en serie: C_p = ε33^T · b · L / (2 t_p).
-  const eps = g.epsR * PHYS.EPS0;
-  const Cp = (eps * b * L) / (2 * tPiezo);
+  // C5: capacidad bimorfo con permitividad a esfuerzo constante.
+  //   C_p = ε33^S · b · L / (2 t_p),  ε33^S = ε33^T·(1 - k31²)  = 31.845 nF
+  const Cp = (g.epsS * b * L) / (2 * tPiezo);
 
   const keq = (3 * section.EI) / Math.pow(L, 3);
   const meq = MEFF * mp * L + tipMass;
@@ -277,7 +303,128 @@ export function optimalResistance(omega: number, Cp: number): number {
   return 1 / (omega * Cp);
 }
 
-/** Cota de potencia máxima (Williams & Yates): P_max = m·a²/(8·ζ_T·ω_n) [W]. */
-export function williamsYatesPmax(m: number, a: number, zetaT: number, omegaN: number): number {
-  return (m * a * a) / (8 * zetaT * omegaN);
+/**
+ * Masa modal efectiva del modo r, calculada desde su forma modal (C4).
+ *
+ * Con la forma normalizada en masa, ∫₀ᴸ m'(x)·φ_r² dx + M_t·φ_r(L)² = 1, la
+ * masa modal es el cuadrado del factor de participación:
+ *
+ *   γ_r = ∫₀ᴸ m'(x)·φ_r(x) dx + M_t·φ_r(L)        [kg]
+ *   m_r = γ_r²                                    [kg]
+ *
+ * Esto es el γ de la notación de Erturk & Inman y el m_eff de Williams &
+ * Yates. NO es la masa equivalente de Rayleigh `meq` (0.2427·m'L + M_t), que
+ * es un aproximación SDOF y no la masa que interviene en la cota.
+ *
+ * Para el modo 1 del modelo de referencia da 10.326 g, un 0.04 % por debajo
+ * del valor de 10.33 g que da el enunciado: la diferencia es residuo de la
+ * normalización numérica por Simpson, no un dato introducido a mano.
+ */
+export function modalEffectiveMass(model: BeamModel, r = 0): number {
+  return model.modes[r].gamma * model.modes[r].gamma;
+}
+
+/**
+ * Cota de potencia de Williams & Yates con ζ mecánico FIJO (C4):
+ *   P = m_1 · a0² / (16 · ζ_m · ω1)   [W]
+ * donde m_1 es la masa modal efectiva del modo 1, `modalEffectiveMass(model)`,
+ * y ζ_m el amortiguamiento mecánico del modelo. Con m_1 = 10.326 g, ζ_m = 0.02,
+ * a0 = 2 m/s² y ω1 = 456.36 rad/s resulta P ≈ 282.8 µW.
+ *
+ * La masa se calcula siempre desde la forma modal: no hay ninguna constante
+ * `gamma2` en el modelo de referencia.
+ *
+ * Ya no existe el factor "realista = 0.5 · cota": se reporta la razón
+ * modelo/cota directamente.
+ */
+export function williamsYatesPmax(
+  model: BeamModel,
+  a0: number,
+  zetaMec: number = BEAM.zetaMec
+): number {
+  const m1 = modalEffectiveMass(model, 0);
+  return (m1 * a0 * a0) / (16 * zetaMec * model.modes[0].omega);
+}
+
+/**
+ * Potencia mecánica media disipada en resonancia por INTEGRACIÓN TEMPORAL
+ * directa del modo 1 excitado por base (P9).
+ *
+ * Se integra  q̈ + 2ζω₁q̇ + ω₁²q = -γ·a0·sin(ωt)  hasta régimen permanente y se
+ * promedia la potencia disipada en el amortiguamiento
+ *   P = ½·c·q̇²,   c = 2ζω₁·γ²
+ * sobre ciclos completos. El valor se contrasta con la predicción analítica
+ * de la FRF en `mechanicalPowerFRF`.
+ */
+export function mechanicalPowerTimeDomain(
+  model: BeamModel,
+  omega: number,
+  a0: number,
+  zeta: number,
+  nCyclesTransient: number = 60,
+  nCyclesAverage: number = 20
+): { meanPower: number; qAmplitude: number } {
+  const m = model.modes[0];
+  const c = 2 * zeta * m.omega * m.gamma * m.gamma;
+  const f = omega / (2 * Math.PI);
+  const deriv = (t: number, y: number[]): number[] => {
+    const a = a0 * Math.sin(omega * t);
+    return [y[1], -2 * zeta * m.omega * y[1] - m.omega * m.omega * y[0] - m.gamma * a];
+  };
+
+  // Régimen permanente.
+  const nT = 40000;
+  const hT = nCyclesTransient / f / nT;
+  let y: [number, number] = [0, 0];
+  for (let i = 0; i < nT; i++) y = rk4Step2(deriv, i * hT, y, hT);
+
+  // Promedio de la potencia sobre ciclos completos.
+  const h = nCyclesAverage / f / 40000;
+  let acc = 0;
+  let qAmp = 0;
+  const n = 40000;
+  const t0 = nCyclesTransient / f;
+  for (let i = 0; i < n; i++) {
+    y = rk4Step2(deriv, t0 + i * h, y, h);
+    acc += 0.5 * c * y[1] * y[1] * h;
+    qAmp = Math.max(qAmp, Math.abs(y[0]));
+  }
+  return { meanPower: acc / (n * h), qAmplitude: qAmp };
+}
+
+/**
+ * Potencia mecánica media disipada según la FRF analítica, a la frecuencia ω.
+ *
+ * Amplitud del desplazamiento en régimen permanente:
+ *   |q| = γ·a0 / √((ω₁²-ω²)² + (2ζω₁ω)²)
+ * Potencia media disipada en el amortiguamiento c = 2ζω₁·γ²:
+ *   P = ½·c·⟨q̇²⟩ = ½·c·(|q|·ω)²/2 = ¼·c·|q|²·ω²
+ * El factor ω² es esencial: en resonancia |q| ∝ 1/ω₁² pero la velocidad, y por
+ * tanto la potencia disipada, no se anula.
+ */
+export function mechanicalPowerFRF(model: BeamModel, omega: number, a0: number, zeta: number): number {
+  const m = model.modes[0];
+  const Fgen = m.gamma * a0;
+  const denom =
+    Math.pow(m.omega * m.omega - omega * omega, 2) + Math.pow(2 * zeta * m.omega * omega, 2);
+  const qAmp = Fgen / Math.sqrt(denom);
+  const c = 2 * zeta * m.omega * m.gamma * m.gamma;
+  return 0.25 * c * qAmp * qAmp * omega * omega;
+}
+
+/** Un paso RK4 de tamaño fijo sobre y = [q, qd]. */
+function rk4Step2(
+  f: (t: number, y: number[]) => number[],
+  t: number,
+  y: [number, number],
+  h: number
+): [number, number] {
+  const k1 = f(t, y);
+  const k2 = f(t + h / 2, [y[0] + (h / 2) * k1[0], y[1] + (h / 2) * k1[1]]);
+  const k3 = f(t + h / 2, [y[0] + (h / 2) * k2[0], y[1] + (h / 2) * k2[1]]);
+  const k4 = f(t + h, [y[0] + h * k3[0], y[1] + h * k3[1]]);
+  return [
+    y[0] + (h / 6) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]),
+    y[1] + (h / 6) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]),
+  ];
 }

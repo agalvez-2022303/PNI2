@@ -1,14 +1,10 @@
 /**
- * Constantes físicas y de configuración globales (unidades SI).
- * Sin números mágicos: todo parámetro base vive aquí o en los archivos de defaults.
- * Fuente: IEEE Std 176-1987 (Standard on Piezoelectricity).
+ * Constantes de cálculo y de barrido (unidades SI).
+ *
+ * El modelo físico NO vive aquí: materiales, geometría, circuito y excitaciones
+ * están congelados en core/referenceModel.ts. Aquí sólo quedan los parámetros
+ * numéricos del integrador y de los barridos, que no son físicos.
  */
-export const PHYS = {
-  /** Permitividad del vacío ε0 [F/m]. */
-  EPS0: 8.854e-12,
-  /** Aceleración de la gravedad estándar g [m/s²]. */
-  G: 9.80665,
-} as const;
 
 /** Fracción de masa efectiva de una viga en voladizo (modo 1), teoría de Rayleigh. */
 export const CANTILEVER_EFFECTIVE_MASS_FRACTION = 0.2427;
@@ -19,8 +15,6 @@ export const NUM = {
   frfPoints: 600,
   /** Puntos del barrido potencia vs resistencia de carga. */
   rSweepPoints: 120,
-  /** Puntos del barrido potencia vs masa de punta. */
-  massSweepPoints: 80,
   /** Número de modos de vibración retenidos (Euler-Bernoulli truncado). */
   nModes: 3,
 } as const;

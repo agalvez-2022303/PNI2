@@ -1,18 +1,25 @@
-/** Cliente del solver: usa un Web Worker y cae a hilo principal con rapidez si no responde. */
-import { Material } from '../core/materials';
+/**
+ * Cliente del solver: envía la petición al Web Worker y cae al hilo principal
+ * si el worker no responde en FALLBACK_MS o falla al construirse.
+ *
+ * Las entradas ya no incluyen materiales ni geometría: el modelo fijo vive en
+ * core/referenceModel.ts, así que aquí sólo viajan TileInputs / BeamInputs.
+ */
 import { runTile } from './tileSim';
 import { runBeam } from './beamSim';
-import { TileParams, BeamParams, TileResult, BeamResult } from './types';
+import { clampTileInputs, clampBeamInputs } from './defaults';
+import { TileInputs, BeamInputs, TileResult, BeamResult, SolverRequest } from './types';
 
 const FALLBACK_MS = 500;
 
 let worker: Worker | null = null;
 let workerBroken = false;
 let counter = 0;
+
 interface Pending {
   resolve: (v: any) => void;
   fallback: () => any;
-  timer: any;
+  timer: ReturnType<typeof setTimeout>;
 }
 const pending = new Map<number, Pending>();
 
@@ -28,15 +35,26 @@ function getWorker(): Worker | null {
   if (workerBroken) return null;
   if (worker) return worker;
   try {
-    worker = new Worker(new URL('../workers/solver.worker.ts', import.meta.url));
+    worker = new Worker(new URL('../workers/solver.worker.ts', import.meta.url), { type: 'module' });
     worker.onmessage = (e: MessageEvent<any>) => {
-      const { id, result } = e.data || {};
-      if (id != null && result !== undefined) resolveWith(id, result);
+      const { id, result, error } = e.data || {};
+      if (id == null) return;
+      if (error) {
+        // El worker no sabe resolver esta entrada: se recalcula en el hilo
+        // principal, que lanza la excepción real si el modelo es inválido.
+        const p = pending.get(id);
+        if (p) {
+          pending.delete(id);
+          clearTimeout(p.timer);
+          p.resolve(p.fallback());
+        }
+        return;
+      }
+      if (result !== undefined) resolveWith(id, result);
     };
     worker.onerror = () => {
       workerBroken = true;
       worker = null;
-      // resuelve lo pendiente en el hilo principal
       pending.forEach((p, id) => resolveWith(id, p.fallback()));
     };
     return worker;
@@ -47,7 +65,7 @@ function getWorker(): Worker | null {
   }
 }
 
-function submit<T>(kind: 'tile' | 'beam', payload: any, fallback: () => T): Promise<T> {
+function submit<T>(req: SolverRequest, fallback: () => T): Promise<T> {
   const w = getWorker();
   if (!w) return Promise.resolve(fallback());
   const id = ++counter;
@@ -55,17 +73,19 @@ function submit<T>(kind: 'tile' | 'beam', payload: any, fallback: () => T): Prom
     const timer = setTimeout(() => resolveWith(id, fallback()), FALLBACK_MS);
     pending.set(id, { resolve, fallback, timer });
     try {
-      w.postMessage({ id, kind, ...payload });
+      w.postMessage({ ...req, id });
     } catch {
       resolveWith(id, fallback());
     }
   });
 }
 
-export function solveTile(params: TileParams, piezo: Material): Promise<TileResult> {
-  return submit('tile', { params, piezo }, () => runTile(params, piezo));
+export function solveTile(raw: Partial<TileInputs>): Promise<TileResult> {
+  const inputs = clampTileInputs(raw);
+  return submit({ id: 0, kind: 'tile', inputs }, () => runTile(inputs));
 }
 
-export function solveBeam(params: BeamParams, piezo: Material, substrate: Material): Promise<BeamResult> {
-  return submit('beam', { params, piezo, substrate }, () => runBeam(params, piezo, substrate));
+export function solveBeam(raw: Partial<BeamInputs>): Promise<BeamResult> {
+  const inputs = clampBeamInputs(raw);
+  return submit({ id: 0, kind: 'beam', inputs }, () => runBeam(inputs));
 }

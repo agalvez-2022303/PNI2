@@ -2,7 +2,8 @@
 import { jsPDF } from 'jspdf';
 import { Chart, registerables } from 'chart.js';
 import { formatSI } from '../core/units';
-import { TileParams, TileResult, BeamParams, BeamResult } from '../sim/types';
+import { TileInputs, TileResult, BeamInputs, BeamResult } from '../sim/types';
+import { STACK, BEAM, PZT5A, PZT5A_DERIVED, CIRCUIT } from '../core/referenceModel';
 
 Chart.register(...registerables);
 
@@ -43,8 +44,8 @@ function darkScales(x: string, yl: string) {
 }
 
 export interface ReportPayload {
-  tile: { params: TileParams; result: TileResult | null; piezoName: string };
-  beam: { params: BeamParams; result: BeamResult | null; piezoName: string; subName: string };
+  tile: { inputs: TileInputs; result: TileResult | null };
+  beam: { inputs: BeamInputs; result: BeamResult | null };
 }
 
 export async function generateReportPdf(pl: ReportPayload) {
@@ -131,33 +132,54 @@ export async function generateReportPdf(pl: ReportPayload) {
   h1('Informe técnico · Cosecha de energía piezoeléctrica');
   sub(`PiezoLab · Simulación 3D con física rigurosa · Generado el ${new Date().toLocaleString('es-ES')}`);
 
+  h2('0. Modelo de referencia (no editable)');
+  kv([
+    ['Piezoeléctrico', `PZT-5H · d33 = ${(PZT5A.d33 * 1e12).toFixed(0)} pC/N · d31 = ${(PZT5A.d31 * 1e12).toFixed(0)} pC/N`],
+    ['Permitividades', `e33T/e0 = ${PZT5A_DERIVED.eps33TRel.toFixed(0)} · e33S/e0 = ${PZT5A_DERIVED.eps33SRel.toFixed(0)}`],
+    ['Acoplamientos', `k33 = ${Math.sqrt(PZT5A_DERIVED.k33Sq).toFixed(4)} · k31 = ${PZT5A_DERIVED.k31.toFixed(4)}`],
+    ['Stack (modo 33)', `${STACK.nStacks} x ${STACK.nLayers} discos ${STACK.diameterMm} x ${STACK.layerThicknessMm} mm · T = ${STACK.totalThicknessMm} mm`],
+    ['Circuito', `Cs = ${(CIRCUIT.Cs * 1e6).toFixed(0)} uF · R = ${CIRCUIT.Rload} ohm · Vf = ${CIRCUIT.Vf} V · Vd = ${CIRCUIT.Vdiode} V`],
+    ['Viga (modo 31)', `L = ${(BEAM.length * 1000).toFixed(0)} x ${(BEAM.width * 1000).toFixed(0)} mm · ts = ${(BEAM.tSub * 1000).toFixed(2)} mm · tp = ${(BEAM.tPiezo * 1000).toFixed(2)} mm`],
+    [
+      'Supuestos declarados',
+      `zeta_mec = ${BEAM.zetaMec} (no medido) · m1 = gamma1^2 = ${pl.beam.result ? (pl.beam.result.modalMass1 * 1000).toFixed(2) : '—'} g (de la forma modal)`,
+    ],
+  ]);
+
   // ---- Simulación 1 ----
-  const t = pl.tile.params;
+  const t = pl.tile.inputs;
   const tr = pl.tile.result;
   h2('1. Baldosa piezoeléctrica de pisada (modo 33)');
   para(
-    'Stack de N discos mecánicamente en serie y eléctricamente en paralelo, excitado por F(t)=F_max·sin²(πt/T). El circuito (puente rectificador + condensador de almacenamiento) se integra con Runge-Kutta 4 de paso adaptativo.'
+    'Stack de N discos mecanicamente en serie y electricamente en paralelo, excitado por F(t)=F_max·sin²(pi·t/T). El circuito (puente rectificador + condensador de almacenamiento + R + LED) se integra con Runge-Kutta 4, encadenando pisados hasta regimen estacionario.'
   );
   kv([
-    ['Material piezoeléctrico', pl.tile.piezoName],
-    ['Nº de capas', `${t.nLayers}`],
-    ['Diámetro / espesor disco', `${formatSI(t.diameter, 'm')} / ${formatSI(t.thickness, 'm')}`],
-    ['Fuerza máxima', `${t.Fmax.toFixed(0)} N`],
-    ['R_load / C_s', `${formatSI(t.Rload, 'Ω')} / ${formatSI(t.Cs, 'F')}`],
+    ['Fuerza máxima F_max', `${t.Fmax.toFixed(0)} N`],
+    ['Cadencia', `${t.cadence.toFixed(0)} pasos/min`],
   ]);
   if (tr) {
     kv([
-      ['Capacitancia C_p', formatSI(tr.Cp, 'F')],
+      ['Capacitancia C_total', formatSI(tr.Cp, 'F')],
       ['Carga Q', formatSI(tr.Q, 'C')],
       ['Voltaje V_oc', formatSI(tr.Voc, 'V')],
-      ['Energía por ciclo', formatSI(tr.energyPerCycle, 'J')],
-      ['Energía cosechada', formatSI(tr.energyHarvested, 'J')],
-      ['Potencia media', formatSI(tr.avgPower, 'W')],
-      ['η teórica / realista', `${(tr.etaTheoretical * 100).toFixed(3)}% / ${(tr.etaRealistic * 100).toFixed(3)}%`],
+      ['Energía ideal 1/2·C·V_oc²', formatSI(tr.energyIdeal, 'J')],
+      ['Energía mecánica U_el', formatSI(tr.U_el, 'J')],
+      ['Energía cosechada', formatSI(tr.E_harvested, 'J')],
+      ['Energía al LED', formatSI(tr.E_LED, 'J')],
+      ['V_c estacionaria (pico)', `${tr.VcSteady.toFixed(4)} V (media ${tr.VcRipple.avg.toFixed(4)} V)`],
+      ['I_LED pico', formatSI(tr.ILedPeak, 'A')],
+      ['η elemento / módulo', `${(tr.k2Elemento * 100).toFixed(3)}% / ${(tr.etaModulo * 100).toFixed(3)}%`],
     ]);
+    para('Cadena de energía por pisada (C11): ' + [
+      `U_el = ${formatSI(tr.chain.U_el, 'J')}`,
+      `E_ideal = ${formatSI(tr.chain.E_ideal, 'J')}`,
+      `E_extraída = ${formatSI(tr.chain.E_extracted, 'J')}`,
+      `E_almacenada = ${formatSI(tr.chain.E_stored, 'J')}`,
+      `E_LED = ${formatSI(tr.chain.E_LED, 'J')}`,
+    ].join(' · '));
   }
-  eq('Q = n · d33 · F      C_p = n · e33T · A / t');
-  eq('V_oc = d33 · t · F / (e33T · A)      E = 1/2 · C_p · V_oc^2');
+  eq('sigma = F/(4A)      Q = n·d33·F      C_total = 4·n·e33T·A/t');
+  eq('V_oc = d33·t·F/(4·e33T·A)      U_el = 1/2·F·s33·sigma·T');
   if (tr) {
     const im = await chartImage({
       type: 'line',
@@ -165,8 +187,8 @@ export async function generateReportPdf(pl: ReportPayload) {
         labels: tr.energyVsLayers.n,
         datasets: [
           {
-            label: 'Energía por ciclo (nJ)',
-            data: tr.energyVsLayers.E.map((e) => e * 1e9),
+            label: 'Energía por pisada (µJ)',
+            data: tr.energyVsLayers.E.map((e) => e * 1e6),
             borderColor: '#0f9c86',
             backgroundColor: 'rgba(15,156,134,0.12)',
             pointRadius: 0,
@@ -175,38 +197,39 @@ export async function generateReportPdf(pl: ReportPayload) {
           },
         ],
       },
-      options: { plugins: { legend: { labels: { color: '#222' } }, title: { display: true, text: 'Energía por ciclo vs Nº de capas', color: '#111' } }, scales: darkScales('Nº de capas', 'E (nJ)') },
+      options: { plugins: { legend: { labels: { color: '#222' } }, title: { display: true, text: 'C7: energía vs nº de capas a T constante', color: '#111' } }, scales: darkScales('Nº de capas', 'E (µJ)') },
     });
     img(im);
+    para('A T constante, C es proporcional a n² y V_oc a 1/n, de modo que E = 1/2·C·V_oc² no depende de n: dividir la misma altura en más capas no produce más energía.');
   }
 
   // ---- Simulación 2 ----
-  const b = pl.beam.params;
+  const b = pl.beam.inputs;
   const br = pl.beam.result;
-  h2('2. Viga bimorfa en voladizo (modo 31, Erturk-Inman)');
+  h2('2. Viga bimorfa en voladizo (modo 31)');
   para(
-    'Modelo de Euler-Bernoulli acoplado electromecánicamente, truncado a 3 modos. La rigidez EI y el eje neutro se obtienen por transformación de secciones. Se reporta la cota teórica de Williams-Yates junto al valor realista con pérdidas.'
+    'Modelo de Euler-Bernoulli acoplado electromecánicamente, truncado a 3 modos. La rigidez EI y el eje neutro se obtienen por transformación de secciones; el acoplamiento usa k31 y e33S, no los del modo 33. Se contrasta la FRF con la integración temporal (P9) y la potencia del modelo con la cota de Williams-Yates.'
   );
   kv([
-    ['Piezo / sustrato', `${pl.beam.piezoName} / ${pl.beam.subName}`],
-    ['Longitud × ancho', `${formatSI(b.length, 'm')} × ${formatSI(b.width, 'm')}`],
-    ['Esp. sustrato / piezo', `${formatSI(b.tSub, 'm')} / ${formatSI(b.tPiezo, 'm')}`],
-    ['Masa de punta', `${(b.tipMass * 1000).toFixed(1)} g`],
-    ['Aceleración base / ζ_T', `${b.a0.toFixed(1)} m/s² / ${b.zetaT.toFixed(3)}`],
+    ['Aceleración de base a0', `${b.a0.toFixed(1)} m/s²`],
+    ['Frecuencia de excitación f_exc', `${b.fExc.toFixed(2)} Hz`],
   ]);
   if (br) {
     kv([
       ['f1 / f2 / f3', `${br.modes.map((m) => m.freq.toFixed(1)).join(' / ')} Hz`],
       ['f_n (SDOF)', formatSI(br.fnSDOF, 'Hz')],
       ['EI / eje neutro', `${formatSI(br.EI, 'N·m²')} / ${formatSI(br.neutralAxis, 'm')}`],
+      ['k_eq / m_eq', `${formatSI(br.keq, 'N/m')} / ${formatSI(br.meq, 'kg')}`],
       ['C_p / R_opt', `${formatSI(br.Cp, 'F')} / ${formatSI(br.Ropt, 'Ω')}`],
-      ['P máx (Williams-Yates)', formatSI(br.pMaxWilliamsYates, 'W')],
-      ['P realista (pérdidas)', formatSI(br.pRealistic, 'W')],
-      ['P pico modelo (FRF)', `${formatSI(br.pModelPeak, 'W')} @ ${formatSI(br.peakFreq, 'Hz')}`],
+      ['Cota Williams-Yates', formatSI(br.pBound, 'W')],
+      ['P del modelo a R_opt', `${formatSI(br.pModel, 'W')} @ ${formatSI(br.peakFreq, 'Hz')}`],
+      ['P modelo / cota', br.pRatio.toFixed(4)],
+      ['FRF vs tiempo (P9)', `${(br.frfVsTime.pFrf * 1e6).toFixed(3)} / ${(br.frfVsTime.pTime * 1e6).toFixed(3)} uW (${(br.frfVsTime.relDiff * 100).toFixed(3)} %)`],
     ]);
   }
-  eq('f_n = (1/2p)·sqrt(k_eq/m_eq)      R_opt ~ 1/(w_n·C_p)');
-  eq('P_max = m·a^2 / (8·zeta_T·w_n)   (Williams-Yates)');
+  eq('k31 = d31^2/(s11E·e33T)      e33S = e33T·(1 - k31^2)');
+  eq("w_n = l1^2·sqrt(EI/(m'·L^4))      R_opt = 1/(w_n·C_p)");
+  eq('P_bound = m·a^2/(8·zeta_mec·w_n)   (Williams-Yates)');
   if (br) {
     const step = Math.max(1, Math.floor(br.frf.f.length / 240));
     const fl: number[] = [];
@@ -231,14 +254,14 @@ export async function generateReportPdf(pl: ReportPayload) {
           },
         ],
       },
-      options: { plugins: { legend: { labels: { color: '#222' } }, title: { display: true, text: 'Potencia vs frecuencia (pico de resonancia)', color: '#111' } }, scales: darkScales('Frecuencia (Hz)', 'P (µW)') },
+      options: { plugins: { legend: { labels: { color: '#222' } }, title: { display: true, text: 'Potencia vs frecuencia (resonancia)', color: '#111' } }, scales: darkScales('Frecuencia (Hz)', 'P (µW)') },
     });
     img(im);
   }
 
   h2('3. Honestidad y limitaciones');
   para(
-    'Todos los valores en SI; se muestran cota teórica y valor realista con pérdidas. Baldosa: cuasiestática, discos idénticos, η a circuito abierto = acoplamiento efectivo k²e. Viga: se desprecia la inercia rotatoria de la masa de punta y se usa acoplamiento lineal; P_max (Williams-Yates) es una cota superior. La deformación 3D está exagerada mediante un factor de escala.'
+    'Todos los valores en SI. Baldosa: cuasiestática, discos idénticos, eficiencia acotada por k33². Viga: se desprecia la inercia rotatoria de la masa de punta y se usa acoplamiento lineal; el amortiguamiento mecánico ζ = 0.02 es un supuesto no medido, y la cota de Williams-Yates es un techo que el modelo no puede superar. La deformación 3D está exagerada con un factor fijo y visible.'
   );
   h2('4. Bibliografía');
   para(

@@ -1,11 +1,13 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { SceneViewer, ViewMode } from '../render/viewer';
-import { buildTileModel, TileMesh } from '../render/tileModel';
+import { buildTileModel, TileMesh, stressColor, DEFAULT_EXAGGERATION } from '../render/tileModel';
 import { buildBeamModel3D, BeamMesh } from '../render/beamModel';
 import { importShell, exportSTL } from '../render/ioModel';
 import { stepForce } from '../core/tile';
-import { TileParams, BeamParams, TileResult, BeamResult } from '../sim/types';
+import { PULSE, ALERTS } from '../core/referenceModel';
+import { stackStress } from '../core/tile';
+import { TileInputs, BeamInputs, TileResult, BeamResult } from '../sim/types';
 import { Play, Pause, RotateCcw, Box, Square, Scissors, Grid3x3 } from 'lucide-react';
 
 export interface ViewerHandle {
@@ -16,9 +18,9 @@ export interface ViewerHandle {
 
 interface Props {
   kind: 'tile' | 'beam';
-  tileParams?: TileParams;
+  tileInputs?: TileInputs;
   tileResult?: TileResult | null;
-  beamParams?: BeamParams;
+  beamInputs?: BeamInputs;
   beamResult?: BeamResult | null;
   modeIndex?: number;
   hud?: { k: string; v: string }[];
@@ -33,7 +35,7 @@ const VIEWS: { id: ViewMode; icon: React.ReactNode; label: string }[] = [
 ];
 
 export const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D(props, ref) {
-  const { kind, tileParams, tileResult, beamParams, beamResult, modeIndex = 0, hud, beamDriveRef } = props;
+  const { kind, tileInputs, tileResult, beamResult, modeIndex = 0, hud, beamDriveRef } = props;
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SceneViewer | null>(null);
   const tileMesh = useRef<TileMesh | null>(null);
@@ -44,8 +46,11 @@ export const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D(props,
   const [playing, setPlaying] = useState(true);
   const [view, setView] = useState<ViewMode>('perspective');
 
-  const liveRef = useRef({ tileParams, tileResult, beamParams, beamResult, modeIndex, beamDriveRef });
-  liveRef.current = { tileParams, tileResult, beamParams, beamResult, modeIndex, beamDriveRef };
+  const liveRef = useRef({ tileInputs, tileResult, beamResult, modeIndex, beamDriveRef });
+  liveRef.current = { tileInputs, tileResult, beamResult, modeIndex, beamDriveRef };
+
+  // C8: el factor de exageración lo fija el solver y no depende del usuario.
+  const exaggeration = tileResult?.renderExaggeration ?? DEFAULT_EXAGGERATION;
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -55,24 +60,19 @@ export const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D(props,
       if (playingRef.current) timeRef.current += dt;
       const t = timeRef.current;
       const L = liveRef.current;
-      if (kind === 'tile' && tileMesh.current && L.tileParams) {
-        const p = L.tileParams;
-        const freq = p.walkMode ? p.walkFreq : 1 / p.T;
-        const spacing = 1 / freq;
-        const nSteps = p.walkMode ? p.walkSteps : 1;
-        const tEnd = p.walkMode ? (nSteps - 1) * spacing + p.T : p.T;
-        const loopT = tEnd + 0.25;
-        const lt = t % loopT;
-        let F = 0;
-        for (let k = 0; k < nSteps; k++) F += stepForce(lt - k * spacing, p.Fmax, p.T);
-        tileMesh.current.update(F / p.Fmax, p.scaleFactor);
+      if (kind === 'tile' && tileMesh.current && L.tileInputs) {
+        // La cadencia viene del usuario, así que la animación va en tiempo real
+        // al ritmo de pisado que se está viendo.
+        const p = L.tileInputs;
+        const F = stepForce(t, p.Fmax, PULSE.Tp);
+        tileMesh.current.update(F, exaggeration);
       }
-      if (kind === 'beam' && beamMesh.current && L.beamParams) {
-        const p = L.beamParams;
-        const modeFreqDisplay = 1.1; // Hz visual (cámara lenta) para apreciar la forma modal
+      if (kind === 'beam' && beamMesh.current && L.beamResult) {
+        // Frecuencia visual lenta (1.1 Hz) para apreciar la forma modal; la
+        // física ya está resuelta por el solver, esto es sólo animación.
         const drv = L.beamDriveRef?.current;
         const amp = drv?.on ? drv.ampNorm : 1;
-        beamMesh.current.update(amp, 2 * Math.PI * modeFreqDisplay * t, p.scaleFactor);
+        beamMesh.current.update(amp, 2 * Math.PI * 1.1 * t, exaggeration);
       }
     };
     return () => {
@@ -82,10 +82,10 @@ export const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D(props,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind]);
 
-  // (Re)construir modelo de baldosa al cambiar geometría
+  // El modelo de baldosa es de geometría fija: se construye una sola vez.
   useEffect(() => {
-    if (kind !== 'tile' || !viewerRef.current || !tileParams) return;
-    const mesh = buildTileModel(tileParams);
+    if (kind !== 'tile' || !viewerRef.current) return;
+    const mesh = buildTileModel();
     tileMesh.current = mesh;
     const g = new THREE.Group();
     g.add(mesh.group);
@@ -94,12 +94,12 @@ export const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D(props,
     viewerRef.current.frameCamera(mesh.radius, mesh.center);
     viewerRef.current.setViewMode(view);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, tileParams?.diameter, tileParams?.thickness, tileParams?.nLayers]);
+  }, [kind]);
 
-  // (Re)construir modelo de viga al cambiar geometría o resultado
+  // El modelo de viga sólo depende de la forma modal que se muestre.
   useEffect(() => {
-    if (kind !== 'beam' || !viewerRef.current || !beamParams || !beamResult) return;
-    const mesh = buildBeamModel3D(beamParams, beamResult);
+    if (kind !== 'beam' || !viewerRef.current || !beamResult) return;
+    const mesh = buildBeamModel3D(beamResult);
     if (beamResult.modeShapes[modeIndex]) mesh.setShape(beamResult.modeShapes[modeIndex]);
     beamMesh.current = mesh;
     const g = new THREE.Group();
@@ -109,15 +109,7 @@ export const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D(props,
     viewerRef.current.frameCamera(mesh.radius, mesh.center);
     viewerRef.current.setViewMode(view);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    kind,
-    beamParams?.length,
-    beamParams?.width,
-    beamParams?.tSub,
-    beamParams?.tPiezo,
-    beamParams?.tipMass,
-    beamResult,
-  ]);
+  }, [kind, beamResult]);
 
   // Cambio de forma modal (viga)
   useEffect(() => {
@@ -158,7 +150,6 @@ export const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D(props,
         const maxDim = Math.max(size.x, size.y, size.z) || 1;
         obj.scale.setScalar(scaleTo / maxDim);
         shellRef.current = obj;
-        // reconstruir escena con la carcasa
         const g = new THREE.Group();
         if (kind === 'tile' && tileMesh.current) g.add(tileMesh.current.group);
         if (kind === 'beam' && beamMesh.current) g.add(beamMesh.current.group);
@@ -219,15 +210,29 @@ export const Viewer3D = forwardRef<ViewerHandle, Props>(function Viewer3D(props,
       </div>
 
       {kind === 'tile' && (
-        <div className="legend">
-          <span>
-            <span className="dot" style={{ background: '#2b6cff' }} /> esfuerzo bajo
-          </span>
-          <span>
-            <span className="dot" style={{ background: '#ff5d5d' }} /> esfuerzo alto
-          </span>
+        <div className="legend" data-testid="tile-legend">
+          <div className="legend-title">
+            σ real · 0 → {ALERTS.sigmaLimit / 1e6} MPa · deformación ×{exaggeration} (fijo)
+          </div>
+          <div className="legend-bar">
+            <span className="dot" style={{ background: `#${stressColor(0).getHexString()}` }} />
+            <span style={{ background: `linear-gradient(90deg, #${stressColor(0).getHexString()}, #${stressColor(
+              ALERTS.sigmaLimit / 2
+            ).getHexString()}, #${stressColor(ALERTS.sigmaLimit).getHexString()})` }} />
+            <span className="dot" style={{ background: `#${stressColor(ALERTS.sigmaLimit).getHexString()}` }} />
+          </div>
+          <div className="legend-scale">
+            <span>0</span>
+            <span>{formatStress(tileInputs?.Fmax ?? 0)}</span>
+            <span>100 MPa</span>
+          </div>
         </div>
       )}
     </div>
   );
 });
+
+function formatStress(Fmax: number): string {
+  const MPa = stackStress(Fmax) / 1e6;
+  return `${MPa.toFixed(1)} MPa a F_max`;
+}

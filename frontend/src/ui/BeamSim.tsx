@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import uPlot from 'uplot';
 import { useApp } from './store';
 import { Viewer3D, ViewerHandle } from './Viewer3D';
-import { Section, Slider, Select, StatSI, Stat } from './controls';
+import { Section, Slider, StatSI, Stat } from './controls';
 import { UPlotChart, UPlotHandle, baseAxes, CHART, vLinePlugin } from './UPlotChart';
 import { formatSI } from '../core/units';
 import { RANGES } from '../sim/defaults';
 import { exportBeamCSV, exportBeamSummary } from './exporters';
 import { GitCompare, Download, FileJson, Boxes, X, Radio, Square } from 'lucide-react';
+import { BEAM, PZT5A, PZT5A_DERIVED } from '../core/referenceModel';
 
 function lineOpts(
   xLabel: string,
@@ -52,7 +53,7 @@ const ChartCard: React.FC<{ title: string; sub?: string; children: React.ReactNo
 
 export const BeamSim: React.FC = () => {
   const app = useApp();
-  const p = app.beamParams;
+  const p = app.beamInputs;
   const r = app.beamResult;
   const cmp = app.beamCompare;
   const viewerRef = useRef<ViewerHandle>(null);
@@ -79,7 +80,7 @@ export const BeamSim: React.FC = () => {
     const t0 = performance.now();
     const fMin = r.frf.f[0];
     const fMax = r.frf.f[r.frf.f.length - 1];
-    const pPeak = r.pModelPeak || 1;
+    const pPeak = r.pModel || 1;
     let raf = 0;
     let lastInfo = 0;
     const loop = () => {
@@ -113,7 +114,6 @@ export const BeamSim: React.FC = () => {
     return [r.frf.f, r.frf.P];
   }, [r, cmp]);
   const pvr: uPlot.AlignedData = useMemo(() => (r ? [r.pVsR.R, r.pVsR.P] : [[], []]), [r]);
-  const pvm: uPlot.AlignedData = useMemo(() => (r ? [r.pVsMass.m.map((x) => x * 1000), r.pVsMass.P] : [[], []]), [r]);
   const vt: uPlot.AlignedData = useMemo(() => (r ? [r.timeSeries.t, r.timeSeries.v] : [[], []]), [r]);
   const pt: uPlot.AlignedData = useMemo(() => (r ? [r.timeSeries.t, r.timeSeries.P] : [[], []]), [r]);
 
@@ -126,7 +126,7 @@ export const BeamSim: React.FC = () => {
         ]
       : [
           { k: 'f₁ resonancia', v: formatSI(r.modes[0]?.freq ?? 0, 'Hz') },
-          { k: 'P máx (modelo)', v: formatSI(r.pModelPeak, 'W') },
+          { k: 'P en resonancia', v: formatSI(r.pModel, 'W') },
           { k: 'R óptima', v: formatSI(r.Ropt, 'Ω') },
         ]
     : [];
@@ -134,79 +134,20 @@ export const BeamSim: React.FC = () => {
   return (
     <div className="layout">
       <div className="sidebar" data-testid="beam-sidebar">
-        <Section title="Materiales">
-          <Select
-            label="Capas piezoeléctricas"
-            value={p.piezoId}
-            onChange={(v) => app.patchBeam({ piezoId: v })}
-            options={app.piezos.map((m) => ({ value: m.id, label: m.name }))}
-            testId="beam-piezo"
-          />
-          <Select
-            label="Sustrato central"
-            value={p.substrateId}
-            onChange={(v) => app.patchBeam({ substrateId: v })}
-            options={app.substrates.map((m) => ({ value: m.id, label: m.name }))}
-            testId="beam-substrate"
-          />
-        </Section>
-
-        <Section title="Geometría de la viga">
-          <Slider
-            label="Longitud L"
-            value={p.length * 1000}
-            min={RANGES.beam.lengthMm.min}
-            max={RANGES.beam.lengthMm.max}
-            step={1}
-            onChange={(v) => app.patchBeam({ length: v / 1000 })}
-            display={`${(p.length * 1000).toFixed(0)} mm`}
-            testId="beam-length"
-          />
-          <Slider
-            label="Ancho b"
-            value={p.width * 1000}
-            min={RANGES.beam.widthMm.min}
-            max={RANGES.beam.widthMm.max}
-            step={1}
-            onChange={(v) => app.patchBeam({ width: v / 1000 })}
-            display={`${(p.width * 1000).toFixed(0)} mm`}
-            testId="beam-width"
-          />
-          <div className="inline-2">
-            <Slider
-              label="Espesor sustrato"
-              value={p.tSub * 1000}
-              min={RANGES.beam.tSubMm.min}
-              max={RANGES.beam.tSubMm.max}
-              step={RANGES.beam.tSubMm.step}
-              onChange={(v) => app.patchBeam({ tSub: v / 1000 })}
-              display={`${(p.tSub * 1000).toFixed(2)} mm`}
-              testId="beam-tsub"
-            />
-            <Slider
-              label="Espesor piezo (c/u)"
-              value={p.tPiezo * 1000}
-              min={RANGES.beam.tPiezoMm.min}
-              max={RANGES.beam.tPiezoMm.max}
-              step={RANGES.beam.tPiezoMm.step}
-              onChange={(v) => app.patchBeam({ tPiezo: v / 1000 })}
-              display={`${(p.tPiezo * 1000).toFixed(2)} mm`}
-              testId="beam-tpiezo"
-            />
+        <Section title="Modelo fijo (no editable)">
+          <div className="hint mono" data-testid="beam-model">
+            PZT-5H bimorfo + latón · L = {(BEAM.length * 1000).toFixed(0)} × {(BEAM.width * 1000).toFixed(0)} mm
+            <br />
+            t_s = {(BEAM.tSub * 1000).toFixed(2)} mm · t_p = {(BEAM.tPiezo * 1000).toFixed(2)} mm (×2) · M_t ={' '}
+            {(BEAM.tipMass * 1000).toFixed(1)} g
+            <br />
+            ε₃₃ˢ/ε₀ = {PZT5A_DERIVED.eps33SRel.toFixed(0)} · k₃₁ = {PZT5A_DERIVED.k31.toFixed(4)}
+            <br />
+            ζ_mec = {BEAM.zetaMec} (supuesto) · m₁ = γ₁² = {r ? (r.modalMass1 * 1000).toFixed(2) : '—'} g (de la forma modal)
           </div>
-          <Slider
-            label="Masa de punta"
-            value={p.tipMass * 1000}
-            min={RANGES.beam.tipMassG.min}
-            max={RANGES.beam.tipMassG.max}
-            step={RANGES.beam.tipMassG.step}
-            onChange={(v) => app.patchBeam({ tipMass: v / 1000 })}
-            display={`${(p.tipMass * 1000).toFixed(1)} g`}
-            testId="beam-tipmass"
-          />
         </Section>
 
-        <Section title="Excitación y amortiguamiento">
+        <Section title="Excitación">
           <Slider
             label="Aceleración de base a₀"
             value={p.a0}
@@ -218,57 +159,15 @@ export const BeamSim: React.FC = () => {
             testId="beam-a0"
           />
           <Slider
-            label="Amortiguamiento total ζ_T"
-            value={p.zetaT}
-            min={RANGES.beam.zetaT.min}
-            max={RANGES.beam.zetaT.max}
-            step={RANGES.beam.zetaT.step}
-            onChange={(v) => app.patchBeam({ zetaT: v })}
-            display={p.zetaT.toFixed(3)}
-            testId="beam-zeta"
+            label="Frecuencia de excitación f_exc"
+            value={p.fExc}
+            min={RANGES.beam.fExc.min}
+            max={RANGES.beam.fExc.max}
+            step={RANGES.beam.fExc.step}
+            onChange={(v) => app.patchBeam({ fExc: v })}
+            display={`${p.fExc.toFixed(2)} Hz`}
+            testId="beam-fexc"
           />
-          <Slider
-            label="Factor de pérdidas (realista)"
-            value={p.lossFactor}
-            min={RANGES.beam.lossFactor.min}
-            max={RANGES.beam.lossFactor.max}
-            step={RANGES.beam.lossFactor.step}
-            onChange={(v) => app.patchBeam({ lossFactor: v })}
-            display={`×${p.lossFactor.toFixed(2)}`}
-            testId="beam-loss"
-          />
-          <Slider
-            label="Resistencia de carga R_load"
-            value={Math.log10(p.Rload)}
-            min={3}
-            max={7}
-            step={0.05}
-            onChange={(v) => app.patchBeam({ Rload: Math.pow(10, v) })}
-            display={formatSI(p.Rload, 'Ω')}
-            testId="beam-rload"
-          />
-          <div className="inline-2">
-            <Slider
-              label="Barrido f mín"
-              value={p.freqMin}
-              min={5}
-              max={100}
-              step={5}
-              onChange={(v) => app.patchBeam({ freqMin: v })}
-              display={`${p.freqMin} Hz`}
-              testId="beam-fmin"
-            />
-            <Slider
-              label="Barrido f máx"
-              value={p.freqMax}
-              min={100}
-              max={600}
-              step={10}
-              onChange={(v) => app.patchBeam({ freqMax: v })}
-              display={`${p.freqMax} Hz`}
-              testId="beam-fmax"
-            />
-          </div>
         </Section>
 
         <Section title="Visualización 3D">
@@ -303,31 +202,99 @@ export const BeamSim: React.FC = () => {
             {sweeping ? <Square size={13} /> : <Radio size={13} />}
             {sweeping ? ' Detener barrido' : ' Barrido de frecuencia'}
           </button>
-          <Slider
-            label="Factor de escala (deformada)"
-            value={p.scaleFactor}
-            min={RANGES.beam.scaleFactor.min}
-            max={RANGES.beam.scaleFactor.max}
-            step={RANGES.beam.scaleFactor.step}
-            onChange={(v) => app.patchBeam({ scaleFactor: v })}
-            display={`×${p.scaleFactor.toFixed(0)}`}
-            testId="beam-scale"
-          />
         </Section>
 
         {r && (
           <Section title="Resultados">
             <div className="stat-grid">
-              <StatSI label="f₁ (modo 1)" value={r.modes[0]?.freq ?? 0} unit="Hz" cls="accent" eq="ω_n = λ₁²·√(EI/m'L⁴)" source="Euler-Bernoulli" testId="beam-res-f1" />
-              <StatSI label="f₂ / f₃" value={r.modes[1]?.freq ?? 0} unit="Hz" note={`f₃ = ${formatSI(r.modes[2]?.freq ?? 0, 'Hz')}`} testId="beam-res-f2" />
-              <Stat label="f_n (SDOF)" value={formatSI(r.fnSDOF, 'Hz')} eq="f_n = (1/2π)·√(k_eq/m_eq)" note={`k_eq=${formatSI(r.keq, 'N/m')}, m_eq=${formatSI(r.meq, 'kg')}`} testId="beam-res-fsdof" />
-              <StatSI label="Rigidez EI" value={r.EI} unit="N·m²" eq="EI = E_ref·Σ[b*t³/12 + A*·d²]" source="Transf. de secciones" testId="beam-res-ei" />
-              <StatSI label="Eje neutro" value={r.neutralAxis} unit="m" eq="ȳ = ΣA*·z / ΣA*" note={`espesor total ${formatSI(r.totalThickness, 'm')}`} testId="beam-res-na" />
-              <StatSI label="Capacitancia C_p" value={r.Cp} unit="F" eq="C_p = ε₃₃·b·L/(2·t_p)" note="bimorfo en serie" testId="beam-res-cp" />
-              <StatSI label="R óptima" value={r.Ropt} unit="Ω" cls="accent" eq="R_opt ≈ 1/(ω_n·C_p)" testId="beam-res-ropt" />
-              <StatSI label="P máx (Williams-Yates)" value={r.pMaxWilliamsYates} unit="W" cls="accent" eq="P_max = m·a²/(8·ζ_T·ω_n)" source="Williams & Yates 1996" note="cota teórica" testId="beam-res-pwy" />
-              <StatSI label="P realista (pérdidas)" value={r.pRealistic} unit="W" cls="amber" eq="P_real = P_max · factor_pérdidas" testId="beam-res-preal" />
-              <StatSI label="P pico (modelo FRF)" value={r.pModelPeak} unit="W" note={`en ${formatSI(r.peakFreq, 'Hz')}`} testId="beam-res-pmodel" />
+              <StatSI
+                label="f₁ (modo 1)"
+                value={r.modes[0]?.freq ?? 0}
+                unit="Hz"
+                cls="accent"
+                eq="ω_n = λ₁² · √(EI / (m'·L⁴))"
+                source="Euler-Bernoulli"
+                testId="beam-res-f1"
+              />
+              <StatSI
+                label="f₂ / f₃"
+                value={r.modes[1]?.freq ?? 0}
+                unit="Hz"
+                note={`f₃ = ${formatSI(r.modes[2]?.freq ?? 0, 'Hz')}`}
+                testId="beam-res-f2"
+              />
+              <Stat
+                label="f_n (SDOF)"
+                value={formatSI(r.fnSDOF, 'Hz')}
+                eq="f_n = (1/2π)·√(k_eq/m_eq)"
+                note={`k_eq=${formatSI(r.keq, 'N/m')}, m_eq=${formatSI(r.meq, 'kg')}`}
+                testId="beam-res-fsdof"
+              />
+              <StatSI
+                label="Rigidez EI"
+                value={r.EI}
+                unit="N·m²"
+                eq="EI = Σ Eᵢ·[b·t³/12 + A·d²]"
+                source="Transformación de secciones"
+                testId="beam-res-ei"
+              />
+              <StatSI
+                label="Eje neutro"
+                value={r.neutralAxis}
+                unit="m"
+                eq="ȳ = ΣA·z / ΣA"
+                note={`espesor total ${formatSI(r.totalThickness, 'm')}`}
+                testId="beam-res-na"
+              />
+              <StatSI
+                label="Capacitancia C_p"
+                value={r.Cp}
+                unit="F"
+                eq="C_p = ε₃₃ˢ·b·L / (2·t_p)"
+                note="bimorfo en serie, ε₃₃ˢ = ε₃₃ᵀ(1−k₃₁²)"
+                testId="beam-res-cp"
+              />
+              <StatSI
+                label="R óptima"
+                value={r.Ropt}
+                unit="Ω"
+                cls="accent"
+                eq="R_opt = 1 / (ω_n · C_p)"
+                testId="beam-res-ropt"
+              />
+              <StatSI
+                label="Cota Williams–Yates"
+                value={r.pBound}
+                unit="W"
+                cls="accent"
+                eq="P_bound = m·a² / (8·ζ_mec·ω_n)"
+                source="Williams & Yates 1996"
+                note="con γ₂ como masa Generalized"
+                testId="beam-res-pwy"
+              />
+              <StatSI
+                label="P del modelo a R_opt"
+                value={r.pModel}
+                unit="W"
+                cls="amber"
+                eq="P = ½·ω_n·ξ²·(ω_n/λ²)·R/(R²+X_C²)"
+                note={`en ${formatSI(r.peakFreq, 'Hz')}`}
+                testId="beam-res-pmodel"
+              />
+              <Stat
+                label="P modelo / cota"
+                value={r.pRatio.toFixed(4)}
+                eq="razón modelo / Williams–Yates"
+                note="debe ser ≤ 1: la cota no puede superarse"
+                testId="beam-res-pratio"
+              />
+              <Stat
+                label="FRF vs integración temporal"
+                value={`${(r.frfVsTime.pFrf * 1e6).toFixed(3)} / ${(r.frfVsTime.pTime * 1e6).toFixed(3)} µW`}
+                eq="P9: la FRF y la integración temporal deben coincidir"
+                note={`diferencia relativa ${(r.frfVsTime.relDiff * 100).toFixed(3)} %`}
+                testId="beam-res-p9"
+              />
             </div>
           </Section>
         )}
@@ -369,7 +336,7 @@ export const BeamSim: React.FC = () => {
         <Viewer3D
           ref={viewerRef}
           kind="beam"
-          beamParams={p}
+          beamInputs={p}
           beamResult={r}
           modeIndex={sweeping ? 0 : modeIndex}
           hud={hud}
@@ -403,9 +370,6 @@ export const BeamSim: React.FC = () => {
               ])}
               redrawKey="br"
             />
-          </ChartCard>
-          <ChartCard title="Potencia vs masa de punta" sub="g">
-            <UPlotChart data={pvm} opts={lineOpts('m (g)', 'P (W)', [{ label: 'P', color: CHART.green }])} redrawKey="bm" />
           </ChartCard>
           <ChartCard title="Voltaje V(t)" sub="régimen permanente">
             <UPlotChart data={vt} opts={lineOpts('t (s)', 'V (V)', [{ label: 'V', color: CHART.accent }])} redrawKey="bv" />
