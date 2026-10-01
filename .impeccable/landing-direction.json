@@ -1,0 +1,78 @@
+{
+  "title": "Estética de la landing",
+  "question": "Para un jurado, la landing se lee como la hoja de un registrador: la pisada es la traza y Simulation es la tecla de marcha. Tres alternativas vienen de otros sistemas gráficos. Quedaron fuera de esta mano los jardines de Versalles, una placa de colectivo pictórico y una liga de carreras: inventarían un lugar, un colectivo o patrocinadores que el proyecto no tiene.",
+  "reroll": true,
+  "canon": true,
+  "steer": true,
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Registrador de papel",
+      "kicker": "Dirección",
+      "lineage": "Hoja de un registrador de laboratorio: cuadrícula, tinta y base de tiempo.",
+      "thesis": "La primera pantalla es la traza de una pisada, no un titular sobre una foto.",
+      "palette": ["#f4f0e6", "#d5e0d2", "#c4504a", "#1c2430", "#2c6b4a"],
+      "materials": ["papel de registrador", "cuadrícula de pelo", "tinta de pluma", "tecla de marcha"],
+      "viewport": "Papel a sangre con la curva de la pisada de lado a lado; PiezoLab y la cifra viven en el margen; Simulation es la tecla de marcha, abajo a la derecha.",
+      "risk": "Si la traza no lleva escalas legibles, se vuelve decoración y el jurado no ve el modelo.",
+      "sketch": ".impeccable/sketches/assigned.png"
+    },
+    {
+      "id": "teletext",
+      "label": "Teletexto de laboratorio",
+      "kicker": "Alternativa",
+      "lineage": "Revista de teletexto: páginas de tres cifras, mosaico y cabecera doble.",
+      "thesis": "Los casos P1–P12 son páginas que se marcan con tres dígitos, y la respuesta espera detrás de REVEAL.",
+      "palette": ["#000000", "#ffffff", "#ffff00", "#00ffff", "#ff0000"],
+      "materials": ["negro de emisión", "mosaico de bloques", "cabecera amarilla", "cifra cian"],
+      "viewport": "Rejilla de 40 por 24, cabecera amarilla PiezoLab, la curva hecha de bloques cian y Simulation como tecla de página.",
+      "case": "Se identifica poco: un jurado no confía en un modelo porque parezca teletexto. La claridad de las páginas numeradas no compensa eso.",
+      "risk": "La física puede leerse como un concurso de televisión.",
+      "hero": "https://impeccable.style/worlds/cards/broadcast-programming-teletext-service-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/broadcast-programming-teletext-service.webp",
+      "sketch": ".impeccable/sketches/teletext.png"
+    },
+    {
+      "id": "neon",
+      "label": "Circuito de neón",
+      "kicker": "Alternativa",
+      "lineage": "Un tubo de vidrio doblado a mano que se enciende como un solo circuito.",
+      "thesis": "La curva de la pisada es un tubo continuo: se dobla, se sella y se enciende.",
+      "palette": ["#0c0e12", "#d7e4ee", "#3d5bff", "#c45a3a"],
+      "materials": ["cuarto oscuro", "vidrio claro", "descarga cobalto", "electrodo rojo"],
+      "viewport": "Fondo oscuro, un solo tubo cobalto dibuja la pisada de lado a lado, electrodos rojos en los extremos y Simulation junto al transformador.",
+      "case": "Pierde claridad: el tubo puede escribir el nombre, no el voltaje en circuito abierto ni la energía por pisada.",
+      "risk": "Termina siendo un logotipo luminoso, no una prueba.",
+      "hero": "https://impeccable.style/worlds/cards/magnetism-electricity-plasma-hand-bent-neon-circuit-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/magnetism-electricity-plasma-hand-bent-neon-circuit.webp",
+      "sketch": ".impeccable/sketches/neon.png"
+    },
+    {
+      "id": "onebit",
+      "label": "Escritorio de un bit",
+      "kicker": "Alternativa",
+      "lineage": "Escritorio monocromo: ventanas, tramado y hormigas en marcha.",
+      "thesis": "El modelo vive en ventanas superpuestas: ecuación, traza y la tecla Simulation en la barra.",
+      "palette": ["#000000", "#ffffff", "#808080"],
+      "materials": ["píxel blanco y negro", "tramado", "cromo de un píxel", "hormigas en marcha"],
+      "viewport": "Escritorio tramado, una ventana titulada PiezoLab con la curva en píxeles y Simulation como botón que se invierte al pulsarse.",
+      "case": "Se identifica poco: un escritorio de 1984 no es la evidencia que reconoce un jurado académico.",
+      "risk": "El rigor puede parecer un juguete retro.",
+      "hero": "https://impeccable.style/worlds/cards/medium-native-one-bit-desktop-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/medium-native-one-bit-desktop.webp",
+      "sketch": ".impeccable/sketches/onebit.png"
+    }
+  ],
+  "canonCard": {
+    "label": "Landing de producto, directa",
+    "kicker": "Salida habitual",
+    "lineage": "La página que esta categoría suele publicar, hecha con oficio y sin guiño.",
+    "thesis": "Titular, una frase, el botón Simulation y tres pruebas en columna.",
+    "palette": ["#f7f7f5", "#161616", "#1d4e89", "#e7e7e2"],
+    "materials": ["fondo claro", "columna de prueba", "botón sólido", "titular centrado"],
+    "viewport": "Cabecera con PiezoLab, titular centrado, Simulation debajo y tres columnas iguales de apoyo.",
+    "case": "Es la página que cualquier herramienta de investigación publicaría. No se recomienda; está aquí si la quieres igual.",
+    "risk": "Se confunde con cualquier otra homepage técnica.",
+    "sketch": ".impeccable/sketches/canon.png"
+  }
+}

@@ -1,0 +1,1322 @@
+@import './fonts.css';
+
+/* ==========================================================================
+   Landing de PiezoLab — escritorio de un bit.
+
+   Reglas del mundo:
+     · solo negro y blanco; los grises son tramados de píxel entero (2 px)
+     · ventanas rectangulares con cromo de 2 px y sombra negra desplazada
+     · rótulos de sistema en Pixelify Sans; texto en Atkinson Hyperlegible
+     · pulsar invierte; arrastrar muestra un contorno punteado;
+       la selección camina con hormigas
+   Todo vive bajo .pz-root para no tocar el banco de trabajo.
+   ========================================================================== */
+
+html.pz-landing,
+html.pz-landing body {
+  height: auto;
+  min-height: 100%;
+  overflow: auto;
+}
+
+html.pz-landing body {
+  background: #fff;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.pz-landing body {
+    scroll-behavior: auto;
+  }
+}
+
+.pz-root,
+.pz-sim-shell {
+  --ink: #000;
+  --paper: #fff;
+  --px: 2px;
+  --menubar-h: 38px;
+  --font-sys: 'Pixelify Sans', 'Atkinson Hyperlegible', sans-serif;
+  --font-text: 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --font-data: 'Atkinson Hyperlegible Mono', ui-monospace, monospace;
+  /* Tramados: 2 × 2 píxeles lógicos dibujados a 2 px por píxel. */
+  --dither-25: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect width='4' height='4' fill='%23fff'/%3E%3Crect width='2' height='2' fill='%23000'/%3E%3C/svg%3E");
+  --dither-50: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect width='4' height='4' fill='%23fff'/%3E%3Crect width='2' height='2' fill='%23000'/%3E%3Crect x='2' y='2' width='2' height='2' fill='%23000'/%3E%3C/svg%3E");
+  --dither-12: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' shape-rendering='crispEdges'%3E%3Crect width='8' height='8' fill='%23fff'/%3E%3Crect width='2' height='2' fill='%23000'/%3E%3Crect x='4' y='4' width='2' height='2' fill='%23000'/%3E%3C/svg%3E");
+
+  color: var(--ink);
+  font-family: var(--font-text);
+}
+
+.pz-root {
+  min-height: 100vh;
+  background: var(--dither-12);
+  font-size: 17px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  overflow-x: clip;
+}
+
+/* Simulación: la barra del expediente queda encima; el banco llena el resto. */
+.pz-sim-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--paper);
+}
+
+.pz-sim-stage {
+  flex: 1;
+  min-height: 0;
+}
+
+.pz-sim-stage .demo-shell,
+.pz-sim-stage .cad-shell,
+.pz-sim-stage .cad-app {
+  height: 100%;
+  width: 100%;
+}
+
+.pz-root *:focus-visible {
+  outline: var(--px) dashed var(--ink);
+  outline-offset: 3px;
+}
+
+.pz-root ::selection {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+:where(.pz-root) a,
+:where(.pz-sim-shell) a {
+  color: inherit;
+}
+
+.pz-root code {
+  font-family: var(--font-data);
+  font-size: 0.88em;
+  padding: 0 3px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  white-space: nowrap;
+}
+
+.pz-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.pz-skip {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 200;
+  padding: 8px 14px;
+  background: var(--ink);
+  color: var(--paper) !important;
+  font-family: var(--font-sys);
+  text-decoration: none;
+}
+
+.pz-skip:focus {
+  top: 6px;
+}
+
+/* --------------------------------------------------------------------------
+   Barra de menús
+   -------------------------------------------------------------------------- */
+
+.pz-menubar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: var(--menubar-h);
+  padding: 0 10px 0 12px;
+  background: var(--paper);
+  border-bottom: var(--px) solid var(--ink);
+  font-family: var(--font-sys);
+}
+
+.pz-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 17px;
+  text-decoration: none;
+}
+
+.pz-brand .pz-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.pz-menubar nav {
+  flex: 1;
+  min-width: 0;
+}
+
+.pz-menubar ul {
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pz-menubar nav a {
+  display: block;
+  padding: 4px 10px;
+  font-size: 16px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.pz-menubar nav a:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* --------------------------------------------------------------------------
+   Botones
+   -------------------------------------------------------------------------- */
+
+.pz-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 24px;
+  border: var(--px) solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sys);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Al pasar el puntero, un contorno punteado interior marca el foco del ratón. */
+.pz-btn::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: var(--px) dotted transparent;
+  pointer-events: none;
+}
+
+.pz-btn:hover::before {
+  border-color: currentColor;
+}
+
+/* Pulsar invierte, como en el escritorio original. */
+.pz-btn:active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* Botón por defecto: el anillo grueso que lo distingue en un diálogo. */
+.pz-btn-default {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.pz-root .pz-btn-default:focus-visible {
+  outline: 3px dashed var(--ink);
+  outline-offset: 3px;
+}
+
+.pz-btn-menu {
+  min-height: 28px;
+  padding: 3px 14px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 16px;
+}
+
+.pz-btn-menu::before {
+  inset: 2px;
+}
+
+.pz-btn-menu:active {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.pz-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-sys);
+  font-size: 17px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  text-decoration-thickness: var(--px);
+}
+
+.pz-link:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* --------------------------------------------------------------------------
+   Ventanas
+   -------------------------------------------------------------------------- */
+
+.pz-win {
+  position: relative;
+  background: var(--paper);
+  border: var(--px) solid var(--ink);
+  filter: drop-shadow(5px 5px 0 var(--ink));
+}
+
+/* Barra de título: la ventana activa lleva rayas finas; la inactiva queda lisa. */
+.pz-titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 44px;
+  border-bottom: var(--px) solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sys);
+  user-select: none;
+}
+
+.pz-win.is-active > .pz-titlebar::before {
+  content: '';
+  position: absolute;
+  inset: 7px 6px;
+  background: repeating-linear-gradient(
+    180deg,
+    var(--ink) 0 var(--px),
+    transparent var(--px) calc(var(--px) * 2)
+  );
+  pointer-events: none;
+}
+
+.pz-title {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 10px;
+  background: var(--paper);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 32px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pz-close {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: var(--px) solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  transform: translateY(-50%);
+  /* Margen de papel alrededor de la casilla, para que no toque las rayas. */
+  outline: 4px solid var(--paper);
+}
+
+.pz-close:hover,
+.pz-close:active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.pz-body {
+  padding: 26px 28px 28px;
+}
+
+.pz-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  position: relative;
+  gap: 4px 18px;
+  padding: 4px 22px 4px 12px;
+  border-top: var(--px) solid var(--ink);
+  font-family: var(--font-sys);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Asa de redimensionar: solo decorativa. */
+.pz-grip {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+}
+
+/* Contorno punteado mientras se arrastra: la ventana solo se mueve al soltar. */
+.pz-ghost {
+  position: absolute;
+  inset: calc(var(--px) * -1);
+  z-index: 5;
+  border: var(--px) dotted var(--ink);
+  pointer-events: none;
+  outline: var(--px) dotted var(--paper);
+  outline-offset: calc(var(--px) * -2);
+}
+
+/* --------------------------------------------------------------------------
+   Tipografía
+   -------------------------------------------------------------------------- */
+
+.pz-h1 {
+  margin: 0 0 22px;
+  font-family: var(--font-sys);
+  font-size: clamp(46px, 5.4vw, 84px);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.015em;
+}
+
+.pz-h2 {
+  margin: 0 0 14px;
+  font-family: var(--font-sys);
+  font-size: clamp(30px, 3.1vw, 42px);
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.pz-h3 {
+  margin: 0 0 6px;
+  font-family: var(--font-text);
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.pz-lede {
+  max-width: 34em;
+  margin: 0 0 26px;
+  font-size: 19px;
+  line-height: 1.5;
+}
+
+.pz-text {
+  max-width: 64ch;
+  margin: 0 0 22px;
+}
+
+.pz-small {
+  max-width: 70ch;
+  margin: 18px 0 0;
+  font-size: 15px;
+}
+
+.pz-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px 28px;
+  padding-left: 6px;
+}
+
+/* --------------------------------------------------------------------------
+   Escritorio (portada)
+   -------------------------------------------------------------------------- */
+
+.pz-desktop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 20px 16px 40px;
+}
+
+.pz-deskicons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pz-deskicon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 92px;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-sys);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.pz-deskicon span {
+  padding: 1px 5px;
+  background: var(--paper);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.pz-deskicon:hover span,
+.pz-deskicon.is-selected span {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.pz-deskicon.is-selected .pz-icon,
+.pz-deskicon:active .pz-icon {
+  filter: invert(1);
+}
+
+.pz-desk-left {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.pz-empty {
+  margin: 0;
+  padding: 14px 18px;
+  align-self: center;
+  border: var(--px) solid var(--ink);
+  background: var(--paper);
+  font-family: var(--font-sys);
+}
+
+@media (min-width: 1100px) {
+  /* Escritorio en retícula: Léame + módulo a la izquierda, traza a la derecha.
+     El módulo cuelga del Léame; no espera a que termine la traza. */
+  .pz-desktop {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1.15fr) minmax(320px, 1fr);
+    align-items: start;
+    column-gap: 32px;
+    min-height: calc(100vh - var(--menubar-h));
+    height: auto;
+    padding: 40px 36px 48px 18px;
+  }
+
+  .pz-deskicons {
+    grid-column: 1;
+    flex-direction: column;
+    gap: 16px;
+    padding-top: 8px;
+  }
+
+  .pz-desk-left {
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 28px;
+  }
+
+  .pz-readme {
+    width: 100%;
+  }
+
+  .pz-trace {
+    grid-column: 3;
+  }
+
+  .pz-module {
+    width: min(320px, 100%);
+  }
+
+  .pz-empty {
+    grid-column: 2 / -1;
+    justify-self: center;
+  }
+
+  .pz-titlebar.is-draggable {
+    cursor: grab;
+  }
+
+  .pz-titlebar.is-draggable:active {
+    cursor: grabbing;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Pisada.trz
+   -------------------------------------------------------------------------- */
+
+.pz-trace .pz-body {
+  padding: 20px 22px 22px;
+}
+
+.pz-plot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 8px;
+}
+
+.pz-axis-y {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2px 0 8px;
+  font-family: var(--font-data);
+  font-size: 12px;
+  text-align: right;
+}
+
+.pz-canvas-cell {
+  min-width: 0;
+}
+
+.pz-canvas-wrap {
+  position: relative;
+}
+
+/* Ancho y alto vienen en línea: múltiplos enteros del lienzo lógico. */
+.pz-canvas-wrap canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* Selección con hormigas en marcha alrededor del pulso. */
+.pz-ants {
+  position: absolute;
+  background:
+    linear-gradient(90deg, var(--ink) 50%, transparent 50%) 0 0 / 8px 2px repeat-x,
+    linear-gradient(90deg, var(--ink) 50%, transparent 50%) 0 100% / 8px 2px repeat-x,
+    linear-gradient(0deg, var(--ink) 50%, transparent 50%) 0 0 / 2px 8px repeat-y,
+    linear-gradient(0deg, var(--ink) 50%, transparent 50%) 100% 0 / 2px 8px repeat-y;
+  animation: pz-ants 0.6s steps(2) infinite;
+  pointer-events: none;
+}
+
+@keyframes pz-ants {
+  to {
+    background-position: 8px 0, -8px 100%, 0 -8px, 100% 8px;
+  }
+}
+
+.pz-peak-label {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 4px));
+  padding: 0 5px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-sys);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.pz-axis-x {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-family: var(--font-data);
+  font-size: 12px;
+}
+
+.pz-axis-span {
+  font-family: var(--font-sys);
+  font-size: 13px;
+}
+
+.pz-slider {
+  display: block;
+  margin: 20px 0 18px;
+}
+
+.pz-slider-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-family: var(--font-sys);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.pz-slider-head output {
+  font-family: var(--font-data);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.pz-slider-head small {
+  font-weight: 400;
+  font-size: 14px;
+}
+
+.pz-slider-range {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-family: var(--font-data);
+  font-size: 12px;
+}
+
+.pz-slider input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 26px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pz-slider input[type='range']::-webkit-slider-runnable-track {
+  height: 12px;
+  border: var(--px) solid var(--ink);
+  background: var(--dither-50);
+}
+
+.pz-slider input[type='range']::-moz-range-track {
+  height: 8px;
+  border: var(--px) solid var(--ink);
+  background: var(--dither-50);
+}
+
+.pz-slider input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 26px;
+  margin-top: -9px;
+  border: var(--px) solid var(--ink);
+  background: var(--paper);
+}
+
+.pz-slider input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 22px;
+  border: var(--px) solid var(--ink);
+  background: var(--paper);
+}
+
+.pz-slider input[type='range']:active::-webkit-slider-thumb {
+  background: var(--ink);
+}
+
+.pz-slider input[type='range']:active::-moz-range-thumb {
+  background: var(--ink);
+}
+
+.pz-readout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border-top: var(--px) solid var(--ink);
+  border-left: var(--px) solid var(--ink);
+}
+
+.pz-readout > div {
+  padding: 8px 12px 10px;
+  border-right: var(--px) solid var(--ink);
+  border-bottom: var(--px) solid var(--ink);
+}
+
+.pz-readout dt {
+  font-family: var(--font-sys);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.pz-readout dd {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* --------------------------------------------------------------------------
+   Módulo (ficha de información)
+   -------------------------------------------------------------------------- */
+
+.pz-module .pz-body {
+  padding: 16px 18px;
+}
+
+.pz-info {
+  margin: 0;
+}
+
+.pz-info > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 0;
+  border-bottom: 1px dotted var(--ink);
+}
+
+.pz-info > div:last-child {
+  border-bottom: 0;
+}
+
+.pz-info dt {
+  font-size: 15px;
+}
+
+.pz-info dd {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* --------------------------------------------------------------------------
+   Apartados
+   -------------------------------------------------------------------------- */
+
+.pz-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 64px;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 40px 16px 110px;
+}
+
+.pz-sec {
+  scroll-margin-top: calc(var(--menubar-h) + 24px);
+}
+
+.pz-endrow {
+  display: flex;
+  flex-direction: column;
+  gap: 64px;
+}
+
+@media (min-width: 900px) {
+  .pz-flow {
+    gap: 56px;
+    padding: 72px 32px 140px;
+  }
+
+  .pz-endrow {
+    gap: 56px;
+  }
+
+  .pz-sec-chain {
+    width: 100%;
+  }
+
+  .pz-sec-model {
+    width: min(100%, 1040px);
+  }
+
+  .pz-sec-tests {
+    width: min(100%, 1140px);
+    margin-left: auto;
+  }
+
+  .pz-sec-limits {
+    width: min(100%, 680px);
+  }
+
+  .pz-sec-team {
+    width: 100%;
+  }
+
+  .pz-sec .pz-body {
+    padding: 36px 40px 40px;
+  }
+}
+
+@media (min-width: 1100px) {
+  .pz-endrow {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 40px;
+  }
+
+  .pz-endrow .pz-sec-limits {
+    flex: 1 1 560px;
+    margin-left: 0;
+    width: auto;
+  }
+
+  .pz-endrow .pz-dialog-wrap {
+    flex: 0 1 480px;
+  }
+
+  .pz-endrow .pz-dialog {
+    width: 100%;
+  }
+}
+
+/* Cadena del circuito: cajas conectadas por un cable de 2 px. */
+.pz-chain {
+  display: grid;
+  gap: 0;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pz-chain li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: var(--px) solid var(--ink);
+  background: var(--paper);
+}
+
+/* El cable vive en el padding, no se mete en el párrafo de debajo. */
+.pz-chain li:not(:last-child) {
+  padding-bottom: 28px;
+}
+
+.pz-chain li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: var(--px);
+  height: 28px;
+  background: var(--ink);
+  transform: translateX(-50%);
+}
+
+.pz-node {
+  padding: 6px 12px;
+  background: var(--ink);
+  color: var(--paper);
+  /* Lleva nombres de pieza con cifras (PZT-5A, 1N4007): letra de datos legible. */
+  font-family: var(--font-data);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.pz-eq {
+  padding: 10px 12px 2px;
+  font-family: var(--font-data);
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pz-note {
+  padding: 0 12px 10px;
+  font-size: 14px;
+}
+
+@media (min-width: 1000px) {
+  .pz-chain {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
+  }
+
+  .pz-chain li:not(:last-child) {
+    padding-bottom: 0;
+    padding-right: 24px;
+  }
+
+  .pz-chain li:not(:last-child)::after {
+    left: auto;
+    right: 0;
+    bottom: auto;
+    top: 18px;
+    width: 24px;
+    height: var(--px);
+    transform: none;
+  }
+}
+
+/* Tablas en vista de lista. */
+.pz-split {
+  display: grid;
+  gap: 32px;
+}
+
+@media (min-width: 900px) {
+  .pz-split {
+    grid-template-columns: 1fr 1.15fr;
+    gap: 40px;
+  }
+}
+
+.pz-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: var(--px) solid var(--ink);
+  font-size: 15px;
+}
+
+.pz-table caption {
+  padding: 0 0 8px;
+  font-family: var(--font-sys);
+  font-size: 17px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.pz-table thead th {
+  padding: 6px 10px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-sys);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.pz-table tbody th,
+.pz-table td {
+  padding: 8px 10px;
+  border-top: 1px dotted var(--ink);
+  text-align: left;
+  vertical-align: top;
+}
+
+.pz-table tbody th {
+  font-weight: 700;
+}
+
+.pz-table td {
+  font-family: var(--font-data);
+  font-size: 14px;
+}
+
+.pz-table tbody tr:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.pz-table-tests td:nth-child(2) {
+  font-family: var(--font-text);
+  font-size: 15px;
+}
+
+.pz-table-tests td:last-child {
+  font-weight: 600;
+}
+
+.pz-tests-grid {
+  display: grid;
+  gap: 36px;
+  align-items: start;
+}
+
+@media (min-width: 1000px) {
+  .pz-tests-grid {
+    grid-template-columns: 1.35fr 1fr;
+    gap: 44px;
+  }
+}
+
+/* Gráfica P5. */
+.pz-p5-wrap .pz-small {
+  margin: 0 0 16px;
+}
+
+.pz-p5 {
+  margin: 0;
+}
+
+/* Ancho y alto del svg vienen en línea: múltiplos enteros del dibujo lógico. */
+.pz-p5 svg {
+  display: block;
+}
+
+.pz-p5-axis {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  justify-items: center;
+  margin-top: 6px;
+  font-family: var(--font-data);
+  font-size: 12px;
+}
+
+.pz-p5 figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 16px;
+  font-family: var(--font-sys);
+  font-size: 14px;
+}
+
+.pz-key {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: 8px;
+  border: var(--px) solid var(--ink);
+}
+
+.pz-key:first-child {
+  margin-left: 0;
+}
+
+.pz-key-ref {
+  background: var(--dither-50);
+}
+
+.pz-key-model {
+  background: var(--ink);
+}
+
+.pz-p5-table {
+  font-size: 13px;
+}
+
+/* En Pixelify el 5 se confunde con la S: los encabezados con cifras van en la letra de datos. */
+.pz-p5-table thead th {
+  font-family: var(--font-data);
+}
+
+.pz-p5-table th,
+.pz-p5-table td {
+  padding: 5px 6px;
+  font-size: 12px;
+  text-align: right;
+}
+
+.pz-p5-table thead th:first-child,
+.pz-p5-table tbody th {
+  text-align: left;
+}
+
+/* Lista de supuestos. */
+.pz-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pz-list li {
+  position: relative;
+  max-width: 62ch;
+  padding: 10px 0 10px 26px;
+  border-top: 1px dotted var(--ink);
+}
+
+.pz-list li:first-child {
+  border-top: 0;
+}
+
+.pz-list li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 19px;
+  width: 10px;
+  height: 10px;
+  background: var(--ink);
+}
+
+.pz-team {
+  display: grid;
+  gap: 12px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pz-team li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 72px;
+  padding: 14px 16px;
+  border: var(--px) solid var(--ink);
+  background: var(--paper);
+}
+
+.pz-team .pz-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+}
+
+.pz-team strong {
+  display: block;
+  font-family: var(--font-sys);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.pz-team span {
+  font-family: var(--font-data);
+  font-size: 13px;
+}
+
+@media (min-width: 720px) {
+  .pz-team {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Diálogo de cierre: el doble marco de una alerta del sistema. */
+.pz-dialog-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.pz-dialog {
+  width: min(100%, 620px);
+}
+
+.pz-dialog > .pz-body {
+  margin: 5px;
+  border: var(--px) solid var(--ink);
+  padding: 26px 26px 24px;
+}
+
+.pz-dialog-body {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.pz-dialog-body .pz-icon {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  margin-top: 4px;
+}
+
+.pz-dialog-body .pz-text {
+  margin-bottom: 8px;
+}
+
+.pz-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 22px;
+  margin-top: 22px;
+  padding: 6px;
+}
+
+/* --------------------------------------------------------------------------
+   Pie
+   -------------------------------------------------------------------------- */
+
+.pz-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 32px;
+  padding: 18px 20px;
+  border-top: var(--px) solid var(--ink);
+  background: var(--paper);
+  font-family: var(--font-sys);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.pz-footer p {
+  margin: 0;
+}
+
+/* La bibliografía se lee mejor en la letra de texto que en la de sistema. */
+.pz-footer p + p {
+  font-family: var(--font-text);
+  font-weight: 400;
+}
+
+.pz-footer code {
+  font-size: 13px;
+}
+
+/* --------------------------------------------------------------------------
+   Rectángulos de zoom al abrir Simulation
+   -------------------------------------------------------------------------- */
+
+.pz-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.pz-zoom span {
+  position: absolute;
+  border: var(--px) solid #fff;
+  mix-blend-mode: difference;
+}
+
+/* --------------------------------------------------------------------------
+   Pantallas estrechas
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .pz-root {
+    font-size: 16px;
+  }
+
+  .pz-menubar {
+    gap: 8px;
+    padding: 0 6px 0 8px;
+  }
+
+  .pz-menubar nav {
+    display: none;
+  }
+
+  .pz-brand {
+    flex: 1;
+  }
+
+  .pz-deskicon {
+    width: 78px;
+  }
+
+  .pz-deskicon span {
+    font-size: 13px;
+  }
+
+  .pz-body {
+    padding: 20px 18px 22px;
+  }
+
+  .pz-lede {
+    font-size: 18px;
+  }
+
+  .pz-readout dd {
+    font-size: 19px;
+  }
+
+  .pz-p5-table th,
+  .pz-p5-table td {
+    padding: 4px 3px;
+    font-size: 11px;
+  }
+
+  .pz-dialog-body {
+    flex-direction: column;
+  }
+}
