@@ -104,13 +104,14 @@ export function balloonSprite(n: number, color: string = '#1f2d3d'): THREE.Sprit
   return spr;
 }
 
-/** Línea guía del globo: une el globo con la pieza a la que apunta. */
+/** Línea guía del globo: punteada, une el globo con la pieza a la que apunta. */
 export function leaderLine(from: THREE.Vector3, to: THREE.Vector3, color: string = '#1f2d3d'): THREE.Line {
   const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
   const line = new THREE.Line(
     geo,
-    new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.9 })
+    new THREE.LineDashedMaterial({ color, dashSize: 2, gapSize: 1.4, depthTest: false, transparent: true, opacity: 0.9 })
   );
+  line.computeLineDistances();
   line.userData.nonPick = true;
   line.renderOrder = 999;
   return line;

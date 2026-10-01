@@ -12,7 +12,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TileResult } from '../../sim/types';
 import { StepClock } from './clock';
-import { fmt } from './theme';
+import { fmt, T } from './theme';
 
 interface Props {
   result: TileResult | null;
@@ -132,7 +132,7 @@ const Chart: React.FC<{
         {/* rejilla y ejes */}
         {yTicks.map((y, i) => (
           <g key={i}>
-            <line x1={PL} x2={W - PR} y1={sy(y)} y2={sy(y)} stroke="#1b2430" strokeWidth="1" />
+            <line x1={PL} x2={W - PR} y1={sy(y)} y2={sy(y)} stroke={T.line} strokeWidth="1" />
             <text x={PL - 4} y={sy(y) + 3} className="ax" textAnchor="end">
               {fmt(y, axisDigits(ymax - ymin))}
             </text>
@@ -143,14 +143,14 @@ const Chart: React.FC<{
             {fmt(x, 2)}
           </text>
         ))}
-        <line x1={PL} x2={W - PR} y1={PT} y2={PT} stroke="#253040" strokeWidth="1" />
-        <line x1={PL} x2={PL} y1={PT} y2={PT + ih} stroke="#253040" strokeWidth="1" />
-        <line x1={PL} x2={W - PR} y1={PT + ih} y2={PT + ih} stroke="#253040" strokeWidth="1" />
+        <line x1={PL} x2={W - PR} y1={PT} y2={PT} stroke={T.textDim} strokeWidth="1" />
+        <line x1={PL} x2={PL} y1={PT} y2={PT + ih} stroke={T.textDim} strokeWidth="1" />
+        <line x1={PL} x2={W - PR} y1={PT + ih} y2={PT + ih} stroke={T.textDim} strokeWidth="1" />
         {/* cero */}
         {ymin < 0 && ymax > 0 && (
-          <line x1={PL} x2={W - PR} y1={sy(0)} y2={sy(0)} stroke="#3a4757" strokeWidth="1" />
+          <line x1={PL} x2={W - PR} y1={sy(0)} y2={sy(0)} stroke={T.textDim} strokeWidth="1" />
         )}
-        <path d={path} fill="none" stroke="#38bdf8" strokeWidth="1.4" />
+        <path d={path} fill="none" stroke={T.accent} strokeWidth="1.4" />
         {/* cursor sincronizado */}
         {cursor !== null && cursor !== undefined && cursor >= xmin && cursor <= xmax && (
           <line
@@ -158,7 +158,7 @@ const Chart: React.FC<{
             x2={sx(cursor)}
             y1={PT}
             y2={PT + ih}
-            stroke="#f5a524"
+            stroke={T.warn}
             strokeWidth="1"
             data-testid={`cursor-${testid}`}
           />

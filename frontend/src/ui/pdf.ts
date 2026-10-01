@@ -3,6 +3,7 @@ import { jsPDF } from 'jspdf';
 import { Chart, registerables } from 'chart.js';
 import { formatSI } from '../core/units';
 import { TileInputs, TileResult, BeamInputs, BeamResult } from '../sim/types';
+import { totalCapacitance, openCircuitVoltage } from '../core/tile';
 import { STACK, BEAM, PZT5A, PZT5A_DERIVED, CIRCUIT } from '../core/referenceModel';
 
 Chart.register(...registerables);
@@ -46,6 +47,8 @@ function darkScales(x: string, yl: string) {
 export interface ReportPayload {
   tile: { inputs: TileInputs; result: TileResult | null };
   beam: { inputs: BeamInputs; result: BeamResult | null };
+  /** Flujo de tránsito asumido [personas/hora] para el escalado local. */
+  flowPerHour?: number;
 }
 
 export async function generateReportPdf(pl: ReportPayload) {
@@ -129,12 +132,65 @@ export async function generateReportPdf(pl: ReportPayload) {
     y += h + 4;
   };
 
-  h1('Informe técnico · Cosecha de energía piezoeléctrica');
-  sub(`PiezoLab · Simulación 3D con física rigurosa · Generado el ${new Date().toLocaleString('es-ES')}`);
+  h1('Informe Técnico · Módulo de Grada Piezoeléctrica Cosechadora de Energía');
+  sub(`PiezoLab · Baldosa en modo 33 validada contra viga bimorfa en modo 31 · Generado el ${new Date().toLocaleString('es-ES')}`);
 
-  h2('0. Modelo de referencia (no editable)');
+  // Crédito de autores, estilo revista técnica.
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(30, 45, 61);
+  doc.text('Alberto Josue Alejandro Gálvez', M, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(110);
+  doc.text('Simulación · investigación de campo · modelado electrónico · experimentación', M, y + 4);
+  y += 10;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(30, 45, 61);
+  doc.text('Luis de Leon', M, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(110);
+  doc.text('Investigación · redacción del informe · elaboración del paper', M, y + 4);
+  y += 9;
+  doc.setDrawColor(180);
+  doc.line(M, y, W - M, y);
+  y += 6;
+
+  const flow = pl.flowPerHour ?? 100;
+  const trSum = pl.tile.result;
+  h2('0. Resumen ejecutivo');
+  para(
+    'Baldosa de tránsito que convierte la energía elástica de cada pisada en electricidad mediante 4 stacks PZT-5A de 60 discos en modo 33, con puente rectificador, almacenamiento Cs y LED. Cálculo analítico + RK4 de paso fijo, con conservación de energía verificada por pisada (error < 1 % contra los casos de referencia).'
+  );
+  if (trSum) {
+    kv([
+      ['Energía útil por pisada (LED)', formatSI(trSum.E_LED, 'J')],
+      ['Energía útil por persona (4 baldosas)', formatSI(trSum.E_harvested * 4, 'J')],
+      ['Escalado local', `${formatSI(trSum.E_harvested * 4 * flow * 12, 'J')}/día · ${flow} personas/h · 12 h activas`],
+    ]);
+  }
+  para(
+    'Impacto local (Guatemala): mercados municipales, terminales de transporte, universidades y hospitales, y escaleras en zonas rurales con electrificación intermitente. La baldosa no sustituye a la red: sostiene señalización autónoma de emergencia, contadores de aforo y nodos IoT de duty-cycle bajo, eliminando baterías y cableado donde su mantenimiento cuesta más que el dispositivo.'
+  );
+
+  h2('1. Marco matemático (notación de Voigt, IEEE Std 176-1987)');
+  para(
+    'Eje 3 = dirección de polarización; los tensores se colapsan a vectores de 6 componentes (11->1, 22->2, 33->3, 23->4, 13->5, 12->6). Ecuaciones constitutivas lineales:'
+  );
+  eq('S_i = s^E_ij · T_j + d_ki · E_k        (i,j = 1..6 ; k = 1..3)');
+  eq('D_i = d_ik · T_k + eps^T_ij · E_j');
+  para('Baldosa, modo 33 (esfuerzo y campo paralelos al espesor):');
+  eq('S3 = s33E·T3 + d33·E3      D3 = d33·T3 + eps33T·E3');
+  eq(`k33^2 = d33^2/(s33E·eps33T) = ${PZT5A_DERIVED.k33Sq.toFixed(4)}   (techo de conversión por pisada)`);
+  para('Viga bimorfa, modo 31 (Erturk & Inman 2011, Euler-Bernoulli acoplado):');
+  eq('S1 = s11E·T1 + d31·E3      k31^2 = d31^2/(s11E·eps33T)');
+  eq('eps33S = eps33T·(1 - k31^2)');
+
+  h2('2. Modelo de referencia (no editable)');
   kv([
-    ['Piezoeléctrico', `PZT-5H · d33 = ${(PZT5A.d33 * 1e12).toFixed(0)} pC/N · d31 = ${(PZT5A.d31 * 1e12).toFixed(0)} pC/N`],
+    ['Piezoeléctrico', `PZT-5A · d33 = ${(PZT5A.d33 * 1e12).toFixed(0)} pC/N · d31 = ${(PZT5A.d31 * 1e12).toFixed(0)} pC/N`],
     ['Permitividades', `e33T/e0 = ${PZT5A_DERIVED.eps33TRel.toFixed(0)} · e33S/e0 = ${PZT5A_DERIVED.eps33SRel.toFixed(0)}`],
     ['Acoplamientos', `k33 = ${Math.sqrt(PZT5A_DERIVED.k33Sq).toFixed(4)} · k31 = ${PZT5A_DERIVED.k31.toFixed(4)}`],
     ['Stack (modo 33)', `${STACK.nStacks} x ${STACK.nLayers} discos ${STACK.diameterMm} x ${STACK.layerThicknessMm} mm · T = ${STACK.totalThicknessMm} mm`],
@@ -149,7 +205,7 @@ export async function generateReportPdf(pl: ReportPayload) {
   // ---- Simulación 1 ----
   const t = pl.tile.inputs;
   const tr = pl.tile.result;
-  h2('1. Baldosa piezoeléctrica de pisada (modo 33)');
+  h2('3. Baldosa piezoeléctrica de pisada (modo 33)');
   para(
     'Stack de N discos mecanicamente en serie y electricamente en paralelo, excitado por F(t)=F_max·sin²(pi·t/T). El circuito (puente rectificador + condensador de almacenamiento + R + LED) se integra con Runge-Kutta 4, encadenando pisados hasta regimen estacionario.'
   );
@@ -206,7 +262,7 @@ export async function generateReportPdf(pl: ReportPayload) {
   // ---- Simulación 2 ----
   const b = pl.beam.inputs;
   const br = pl.beam.result;
-  h2('2. Viga bimorfa en voladizo (modo 31)');
+  h2('4. Viga bimorfa en voladizo (modo 31)');
   para(
     'Modelo de Euler-Bernoulli acoplado electromecánicamente, truncado a 3 modos. La rigidez EI y el eje neutro se obtienen por transformación de secciones; el acoplamiento usa k31 y e33S, no los del modo 33. Se contrasta la FRF con la integración temporal (P9) y la potencia del modelo con la cota de Williams-Yates.'
   );
@@ -259,14 +315,31 @@ export async function generateReportPdf(pl: ReportPayload) {
     img(im);
   }
 
-  h2('3. Honestidad y limitaciones');
+  h2('5. Comparativa · valores teóricos vs simulación');
+  if (tr) {
+    const cTheo = totalCapacitance(STACK.nLayers);
+    const vTheo = openCircuitVoltage(t.Fmax, STACK.layerThickness);
+    const d = (sim: number, theo: number) => `${(((sim - theo) / theo) * 100).toFixed(3)} %`;
+    kv([
+      ['C_total · teórica vs simulada', `${formatSI(cTheo, 'F')} / ${formatSI(tr.Cp, 'F')}  (desv. ${d(tr.Cp, cTheo)})`],
+      ['V_oc · teórica vs simulada', `${formatSI(vTheo, 'V')} / ${formatSI(tr.Voc, 'V')}  (desv. ${d(tr.Voc, vTheo)})`],
+      ['E teórica ideal ½·C·V_oc² (frontera k33²)', formatSI(tr.energyIdeal, 'J')],
+      ['E útil real E_LED en régimen', `${formatSI(tr.E_LED, 'J')}  (${d(tr.E_LED, tr.energyIdeal)} respecto a la ideal)`],
+      ['η elemento k²_ef = E_ideal/U_el vs k33²', `${(tr.k2Elemento * 100).toFixed(3)} % vs ${(PZT5A_DERIVED.k33Sq * 100).toFixed(2)} %`],
+    ]);
+  }
+  if (br) {
+    kv([['P viga modelo vs cota Williams-Yates', `${formatSI(br.pModel, 'W')} / ${formatSI(br.pBound, 'W')} (razón ${br.pRatio.toFixed(4)})`]]);
+  }
+
+  h2('6. Conclusiones técnicas (honestas) y limitaciones');
   para(
-    'Todos los valores en SI. Baldosa: cuasiestática, discos idénticos, eficiencia acotada por k33². Viga: se desprecia la inercia rotatoria de la masa de punta y se usa acoplamiento lineal; el amortiguamiento mecánico ζ = 0.02 es un supuesto no medido, y la cota de Williams-Yates es un techo que el modelo no puede superar. La deformación 3D está exagerada con un factor fijo y visible.'
+    'Con la física verificada, la baldosa entrega microjulios por pisada, no vatios: es inviable para cargas continuas y viable con margen para señalización LED autónoma intermitente, contadores de aforo y nodos IoT de duty-cycle bajo (µW de media), que es el caso de uso defendible en espacios públicos de Guatemala. Limitaciones declaradas: modelo cuasiestático del stack, discos idénticos, eficiencia acotada por k33²; el puente se ha validado con 1N4007 (Vd = 0.6 V) —una versión Schottky (Vd ~ 0.35 V) reduciría a la mitad esa pérdida, pero no forma parte de la referencia validada—; en la viga se desprecia la inercia rotatoria de la masa de punta y ζ = 0.02 es un supuesto no medido; la cota de Williams-Yates es un techo que el modelo no supera. Pérdidas por grieta y envejecimiento del cerámico fuera de alcance. La deformación 3D está exagerada con un factor fijo y visible.'
   );
-  h2('4. Bibliografía');
+  h2('7. Bibliografía');
   para(
-    'Erturk & Inman (2011), Piezoelectric Energy Harvesting, Wiley. · IEEE Std 176-1987, Standard on Piezoelectricity. · Williams & Yates (1996). · Roundy & Wright (2004).'
+    'IEEE Std 176-1987, Standard on Piezoelectricity (notación de Voigt y ejes de polarización). · Erturk & Inman (2011), Piezoelectric Energy Harvesting, Wiley. · Williams & Yates (1996). · Roundy & Wright (2004).'
   );
 
-  doc.save('informe_piezolab.pdf');
+  doc.save('informe_tecnico_grada_piezoeléctrica.pdf');
 }

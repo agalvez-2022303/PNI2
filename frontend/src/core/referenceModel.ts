@@ -215,8 +215,12 @@ export const BEAM = Object.freeze({
 /* ------------------------------------------------------------------ */
 
 export const INPUTS = Object.freeze({
-  /** Fuerza pico del pisada F_max [N]. */
-  Fmax: Object.freeze({ min: 300, max: 1000, step: 10, def: 700, unit: 'N' }),
+  /**
+   * Fuerza pico del pisada F_max [N]. El slider de la interfaz se expresa en
+   * peso de persona (40–120 kg) y se convierte con F = kg·G·1.3 (factor
+   * dinámico de talón): 40 kg → 510 N, 120 kg → 1530 N.
+   */
+  Fmax: Object.freeze({ min: 300, max: 1530, step: 10, def: 700, unit: 'N' }),
   /** Cadencia de pisado [pasos/min]. */
   cadence: Object.freeze({ min: 60, max: 120, step: 1, def: 100, unit: 'pasos/min' }),
   /** Aceleración de base a0 [m/s²] (solo viga). */

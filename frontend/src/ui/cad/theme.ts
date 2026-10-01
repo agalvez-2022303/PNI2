@@ -6,28 +6,28 @@
  * tarjetas, ni sombras, ni bordes redondeados (todo border-radius = 0).
  */
 
-/** Paleta fría de interfaz. */
+/** Paleta gris clásica de interfaz CAD (espejo de las variables de index.css). */
 export const T = {
-  /** Fondo general de la aplicación. */
-  bg: '#0b0f14',
-  /** Superficie de panel y de celda. */
-  surface: '#0f151c',
-  /** Superficie algo más clara para filas alternas y cabeceras. */
-  surfaceAlt: '#131a23',
+  /** Mesa de trabajo: gris medio. */
+  bg: '#d9dfe6',
+  /** Superficie de panel y de celda: gris claro. */
+  surface: '#edf0f4',
+  /** Superficie algo más oscura para filas alternas y cabeceras. */
+  surfaceAlt: '#e2e7ec',
   /** Línea divisoria de 1 px. */
-  line: '#253040',
-  /** Texto principal. */
-  text: '#c8d3df',
+  line: '#b9c2cc',
+  /** Texto principal (ink). */
+  text: '#22303f',
   /** Texto secundario y etiquetas. */
-  textDim: '#7d8ea3',
-  /** Acento único de la interfaz. */
-  accent: '#38bdf8',
+  textDim: '#5d6c7d',
+  /** Acento único: azul técnico. */
+  accent: '#0d63c9',
   /** Advertencia. */
-  warn: '#f5a524',
+  warn: '#a35a06',
   /** Fallo o violación. */
-  fail: '#ef5350',
+  fail: '#c62828',
   /** "Cumple" en tablas de validación. */
-  ok: '#3ddc97',
+  ok: '#1e7d45',
 } as const;
 
 /** Única familia tipográfica, monoespaciada. */

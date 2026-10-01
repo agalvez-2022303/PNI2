@@ -165,9 +165,9 @@ export const Schematic: React.FC<Props> = ({ result, clock, selected, onSelect }
           data-testid="sch-resistencia"
         >
           <line x1={NODE.r.x - 14} y1={NODE.r.y} x2={NODE.r.x + 14} y2={NODE.r.y} stroke={stroke} strokeWidth="1.5" />
-          <rect x={NODE.r.x - 6} y={NODE.r.y - 9} width="12" height="18" fill="#0f151c" stroke={T.accent} strokeWidth="1.5" />
+          <rect x={NODE.r.x - 6} y={NODE.r.y - 9} width="12" height="18" fill={T.surface} stroke={T.accent} strokeWidth="1.5" />
           <text x={NODE.r.x} y={NODE.r.y - 16} className="cad-sch-lbl">R</text>
-          <text x={NODE.r.x} y={NODE.r.y + 26} className="cad-sch-val">{CIRCUIT.Rload} Ω</text>
+          <text x={NODE.r.x} y={NODE.r.y + 26} className="cad-sch-val">{`${CIRCUIT.Rload} Ω`}</text>
         </g>
 
         {/* LED */}
@@ -186,7 +186,7 @@ export const Schematic: React.FC<Props> = ({ result, clock, selected, onSelect }
           <line x1={NODE.led.x} y1={NODE.led.y - 2} x2={NODE.led.x - 4} y2={NODE.led.y - 12} stroke={T.accent} strokeWidth="1.2" />
           <line x1={NODE.led.x + 1} y1={NODE.led.y - 2} x2={NODE.led.x + 5} y2={NODE.led.y - 12} stroke={T.accent} strokeWidth="1.2" />
           <text x={NODE.led.x + 12} y={NODE.led.y + 4} className="cad-sch-lbl">LED</text>
-          <text x={NODE.led.x + 12} y={NODE.led.y + 16} className="cad-sch-val">Vf {fmt(CIRCUIT.Vf, 1)} V</text>
+          <text x={NODE.led.x + 12} y={NODE.led.y + 16} className="cad-sch-val">{`Vf ${fmt(CIRCUIT.Vf, 1)} V`}</text>
         </g>
 
         {/* stack piezo */}
@@ -200,7 +200,7 @@ export const Schematic: React.FC<Props> = ({ result, clock, selected, onSelect }
             y={NODE.stack.y - 12}
             width="24"
             height="24"
-            fill="#0f151c"
+            fill={T.surface}
             stroke={T.accent}
             strokeWidth="1.5"
           />
@@ -209,7 +209,7 @@ export const Schematic: React.FC<Props> = ({ result, clock, selected, onSelect }
           ))}
           <text x={NODE.stack.x} y={NODE.stack.y - 18} className="cad-sch-lbl">piezo</text>
           <text x={NODE.stack.x} y={NODE.stack.y + 28} className="cad-sch-val">
-            {STACK.nStacks} × {STACK.nLayers} capas
+            {`${STACK.nStacks} × ${STACK.nLayers} capas`}
           </text>
         </g>
 

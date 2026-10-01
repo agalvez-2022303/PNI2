@@ -7,7 +7,7 @@
  * escala de datos y el indicador de deformación, que son parte de la lectura
  * de la imagen.
  */
-import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { SceneViewer, ViewMode } from '../../render/viewer';
 import { buildAssembly, AssemblyModel } from '../../render/assembly';
@@ -31,7 +31,8 @@ interface Props {
   clock: StepClock;
   exaggeration: number;
   view: ViewMode;
-  exploded: boolean;
+  /** Factor de explosión CAD 0..1: 0 = ensamblado, 1 = desplegado. */
+  explodeFactor: number;
   dims: boolean;
   balloons: boolean;
   section: number;
@@ -42,19 +43,21 @@ interface Props {
   onExplodeEnd?: () => void;
 }
 
-/** Duración exacta de la transición a vista desplegada. */
+/** Duración de la transición al 100 % del factor; se escala con el recorrido. */
 const EXPLODE_SECONDS = 1.0;
 
 export const ViewerPane = forwardRef<ViewerHandle, Props>(function ViewerPane(props, ref) {
-  const { inputs, result, clock, exaggeration, view, exploded, dims, balloons, section, hidden } = props;
+  const { inputs, result, clock, exaggeration, view, explodeFactor, dims, balloons, section, hidden } = props;
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SceneViewer | null>(null);
   const asmRef = useRef<AssemblyModel | null>(null);
   const balloonsRef = useRef<ReturnType<typeof buildBalloons> | null>(null);
   const timeRef = useRef(0);
-  const explodeRef = useRef({ from: 0, to: 0, current: 0, t0: 0, running: false });
+  const explodeRef = useRef({ from: 0, to: 0, current: 0, t0: 0, dur: 1000, running: false });
   const lastFrame = useRef({ sig: NaN, led: NaN, ex: NaN });
+  /** Leyenda de σ visible SOLO con el mapa de esfuerzo encendido. */
+  const [stressMap, setStressMap] = useState(false);
 
   const live = useRef(props);
   live.current = props;
@@ -82,6 +85,7 @@ export const ViewerPane = forwardRef<ViewerHandle, Props>(function ViewerPane(pr
     v.onPick = (pick) => live.current.onSelect(pick ? (pick.id as PartId) : null);
     v.onHover = (pt) =>
       live.current.onHover(pt ? { x: pt.x, y: pt.y, z: pt.z } : null);
+    v.onStressMap = (on) => setStressMap(on);
 
     v.onFrame = (dt) => {
       const L = live.current;
@@ -96,11 +100,14 @@ export const ViewerPane = forwardRef<ViewerHandle, Props>(function ViewerPane(pr
       // Corriente del LED leída de la serie del solver (no aproximada).
       const iL = L.result ? sampleSeries(L.result.series.t, L.result.series.I, t) : 0;
 
-      // Transición a la vista desplegada: 1 s exactos, reloj de pared.
+      // Transición del factor de explosión: duración proporcional al recorrido
+      // (los botones ensamblar/desplegar animan ~1 s; el slider responde casi
+      // en tiempo real).
       const ex = explodeRef.current;
       let explodeAmt = ex.to;
       if (ex.running) {
-        const k = Math.min(1, (performance.now() - ex.t0) / (EXPLODE_SECONDS * 1000));
+        let k = Math.min(1, (performance.now() - ex.t0) / ex.dur);
+        k = k * k * (3 - 2 * k); // smoothstep
         explodeAmt = ex.from + (ex.to - ex.from) * k;
         ex.current = explodeAmt;
         if (k >= 1) {
@@ -110,12 +117,15 @@ export const ViewerPane = forwardRef<ViewerHandle, Props>(function ViewerPane(pr
         }
       }
 
-      // Sólo se toca la escena si algo cambió de verdad.
+      // Sólo se toca la escena si algo cambió de verdad. La primera vez
+      // (`sig = NaN`) se fuerza el refresco: sin esto, `NaN` hace que la
+      // comparación sea siempre `false` y el ensamble jamás se anime.
       const key = F * 1e3 + iL * 1e6 + explodeAmt * 1e3;
-      if (Math.abs(key - lastFrame.current.sig) > 0.5) {
+      if (!Number.isFinite(lastFrame.current.sig) || Math.abs(key - lastFrame.current.sig) > 0.5) {
         lastFrame.current.sig = key;
         asm.apply({
           Fmax: F,
+          forceNorm: L.inputs.Fmax > 0 ? Math.max(0, Math.min(1, F / L.inputs.Fmax)) : 0,
           exaggeration: L.exaggeration,
           ILed: iL,
           ILedRef: L.result?.ILedPeak || 1e-3,
@@ -165,17 +175,27 @@ export const ViewerPane = forwardRef<ViewerHandle, Props>(function ViewerPane(pr
     viewerRef.current?.select(props.selected);
   }, [props.selected]);
 
-  // ---- vista desplegada ----------------------------------------------------
+  // ---- factor de explosión CAD ----------------------------------------------
   useEffect(() => {
     const ex = explodeRef.current;
-    const target = exploded ? 1 : 0;
+    const target = Math.max(0, Math.min(1, explodeFactor));
     if (ex.to === target && !ex.running) return;
-    ex.from = ex.running ? ex.current ?? ex.to : ex.to;
-    ex.current = ex.from;
+    const from = ex.running ? ex.current : ex.to;
+    const dist = Math.abs(target - from);
+    if (dist < 0.02) {
+      // El slider fino llega casi en tiempo real: sin animación.
+      ex.current = target;
+      ex.to = target;
+      ex.running = false;
+      return;
+    }
+    ex.from = from;
+    ex.current = from;
     ex.to = target;
     ex.t0 = performance.now();
+    ex.dur = EXPLODE_SECONDS * 1000 * dist;
     ex.running = true;
-  }, [exploded]);
+  }, [explodeFactor]);
 
   useImperativeHandle(ref, () => ({
     exportSTL: (name: string) => {
@@ -191,21 +211,25 @@ export const ViewerPane = forwardRef<ViewerHandle, Props>(function ViewerPane(pr
   return (
     <div className="cad-canvas" ref={wrapRef} data-testid="cad-viewer">
       <div className="cad-readout" data-testid="cad-readout">
-        <div className="cad-readout-row">
-          <span>σ</span>
-          <b className={sigmaMPa > limitMPa ? 'bad' : ''}>{fmt(sigmaMPa, 2)} MPa</b>
-          <span className="muted">límite {limitMPa} MPa</span>
-        </div>
-        <div className="cad-scale" data-testid="sigma-scale">
-          {SIGMA_STOPS.map((s) => (
-            <span key={s.mpa} className="cad-scale-stop" style={{ background: s.color }} title={`${s.mpa} MPa`} />
-          ))}
-        </div>
-        <div className="cad-scale-ticks">
-          {SIGMA_STOPS.map((s) => (
-            <span key={s.mpa}>{s.mpa}</span>
-          ))}
-        </div>
+        {stressMap && (
+          <>
+            <div className="cad-readout-row">
+              <span>σ</span>
+              <b className={sigmaMPa > limitMPa ? 'bad' : ''}>{fmt(sigmaMPa, 2)} MPa</b>
+              <span className="muted">límite {limitMPa} MPa</span>
+            </div>
+            <div className="cad-scale" data-testid="sigma-scale">
+              {SIGMA_STOPS.map((s) => (
+                <span key={s.mpa} className="cad-scale-stop" style={{ background: s.color }} title={`${s.mpa} MPa`} />
+              ))}
+            </div>
+            <div className="cad-scale-ticks">
+              {SIGMA_STOPS.map((s) => (
+                <span key={s.mpa}>{s.mpa}</span>
+              ))}
+            </div>
+          </>
+        )}
         <div className="cad-readout-row">
           <span>deformación</span>
           <b>×{exaggeration}</b>

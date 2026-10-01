@@ -1,14 +1,13 @@
 /**
- * Visor 3D estilo CAD: fondo claro en degradado, iluminación plana, rejilla
- * de plano de trabajo, tríada de ejes XYZ, ViewCube, cotas conmutables y plano
- * de corte ajustable.
- *
- * Sin sombras: la profundidad la dan las aristas oscuras y el color de datos
- * (esfuerzo σ). El visor es claro; el resto de la interfaz se queda oscuro.
+ * Visor 3D estilo CAD: fondo claro plano, luz plana (ambient + hemi + key con
+ * sombra PCF + fill), rejilla de plano de trabajo, tríada de ejes XYZ,
+ * ViewCube, cotas conmutables y plano de corte ajustable. La iluminación y el
+ * fondo son exactamente los del visor de `Intento2` (fondo #eef2f6, rejillas
+ * #cbd5e1/#94a3b8, plano de contacto con ShadowMaterial), de modo que la
+ * figura 3D se ve idéntica a dicho proyecto.
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { axisLabel, textSprite } from './labels';
 
 export type ViewMode = 'perspective' | 'orthographic' | 'section' | 'wireframe' | 'exploded';
@@ -22,11 +21,10 @@ export interface PickInfo {
 }
 
 export const CAD = {
-  /** Degradado vertical del fondo estilo hoja CAD. */
-  bgTop: '#f4f7fb',
-  bgBottom: '#d5dde8',
-  gridMajor: '#9fb3c8',
-  gridMinor: '#9fb3c8',
+  /** Fondo plano claro: el mismo del visor de `Intento2`. */
+  background: '#eef2f6',
+  gridMajor: '#94a3b8',
+  gridMinor: '#cbd5e1',
   edge: '#1f2d3d',
   dimLine: '#1f2d3d',
   dimText: '#1f2d3d',
@@ -68,6 +66,8 @@ export class SceneViewer {
   /** Se dispara al elegir una cara del ViewCube. */
   onCubeView?: (v: CubeView) => void;
   cubeView: CubeView = 'iso';
+  /** Se dispara al conmutar el mapa de esfuerzo: la leyenda de σ se oculta con él. */
+  onStressMap?: (on: boolean) => void;
   /** Posición del cursor en la escena, para la barra de estado. */
   onHover?: (pt: THREE.Vector3 | null) => void;
 
@@ -94,8 +94,6 @@ export class SceneViewer {
   /** Mapa de esfuerzo conmutado desde el botón del propio visor. */
   private stressMapOn = false;
   private stressBtn: HTMLButtonElement;
-  /** Render target del mapa de entorno (PMREM); se libera en dispose(). */
-  private envRT: THREE.WebGLRenderTarget | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -106,22 +104,18 @@ export class SceneViewer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(w, h);
     this.renderer.autoClear = false;
-    // Sin sombras: el estilo CAD es plano.
-    this.renderer.shadowMap.enabled = false;
+    // Sombras suaves: la key proyecta sobre el plano de contacto y sobre las
+    // propias piezas; es lo que da peso y profundidad al ensamble.
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = gradientTexture(CAD.bgTop, CAD.bgBottom);
-
-    // Mapa de entorno (PMREM): da reflejo y contraste a los materiales PBR
-    // sin necesidad de sombras. Es lo que separa un "viewer CAD" de un
-    // bloque plano negro.
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
-    this.scene.environment = this.envRT.texture;
-    pmrem.dispose();
+    // Fondo plano idéntico a `Intento2`; sin mapa de entorno: la iluminación
+    // base la dan las luces del visor original (ambient + hemi + key + fill).
+    this.scene.background = new THREE.Color(CAD.background);
 
     this.perspCamera = new THREE.PerspectiveCamera(45, w / h, 0.5, 4000);
     this.perspCamera.position.set(110, 90, 150);
@@ -162,18 +156,29 @@ export class SceneViewer {
     this.animate();
   }
 
-  /** Iluminación: el entorno PMREM es la fuente principal; las luces sólo
-   *  dirigen el brillo. Con environment + estas intensidades ninguna pieza
-   *  queda negra. */
+  /** Iluminación plana exacta de `Intento2`: ambient + hemisférica + key con
+   *  sombra PCF + relleno. La key es la única que proyecta sombra. */
   private setupLights() {
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    const hemi = new THREE.HemisphereLight(0xf4f7fb, 0xd5dde8, 0.4);
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+    const hemi = new THREE.HemisphereLight(0xffffff, 0xc7d0da, 0.55);
     this.scene.add(hemi);
-    const key = new THREE.DirectionalLight(0xffffff, 0.7);
-    key.position.set(90, 180, 120);
+
+    const key = new THREE.DirectionalLight(0xffffff, 1.35);
+    key.position.set(70, 150, 100);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.near = 1;
+    key.shadow.camera.far = 600;
+    const d = 180;
+    key.shadow.camera.left = -d;
+    key.shadow.camera.right = d;
+    key.shadow.camera.top = d;
+    key.shadow.camera.bottom = -d;
+    key.shadow.bias = -0.0004;
     this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0xc8d3df, 0.25);
-    fill.position.set(-120, 60, -90);
+
+    const fill = new THREE.DirectionalLight(0xffffff, 0.4);
+    fill.position.set(-90, 60, -70);
     this.scene.add(fill);
   }
 
@@ -191,6 +196,7 @@ export class SceneViewer {
       this.setStressMap(this.stressMapOn);
       btn.style.color = this.stressMapOn ? '#0284c7' : '#1f2d3d';
       btn.style.borderColor = this.stressMapOn ? '#0284c7' : '#9fb3c8';
+      this.onStressMap?.(this.stressMapOn);
     });
     this.container.appendChild(btn);
     return btn;
@@ -210,29 +216,42 @@ export class SceneViewer {
     find(this.modelGroup ?? new THREE.Group())?.(v);
   }
 
-  /** Rejilla de plano de trabajo en dos escalas: fina al 40 %, mayores al 70 %. */
+  /** Rejilla de plano de trabajo en dos escalas, igual que `Intento2`
+   *  (menor 120 divisiones, mayor 24), asentada bajo el fondo de la bandeja. */
   private setupGround() {
+    const floorY = -2;
+
     const minor = new THREE.GridHelper(
-      400,
-      80,
+      600,
+      120,
       new THREE.Color(CAD.gridMinor),
       new THREE.Color(CAD.gridMinor)
     );
-    (minor.material as THREE.Material).opacity = 0.4;
+    (minor.material as THREE.Material).opacity = 0.5;
     (minor.material as THREE.Material).transparent = true;
-    minor.position.y = -0.05;
+    minor.position.y = floorY - 0.02;
     this.scene.add(minor);
 
     const major = new THREE.GridHelper(
-      400,
-      16,
+      600,
+      24,
       new THREE.Color(CAD.gridMajor),
       new THREE.Color(CAD.gridMajor)
     );
-    (major.material as THREE.Material).opacity = 0.7;
+    (major.material as THREE.Material).opacity = 0.85;
     (major.material as THREE.Material).transparent = true;
-    major.position.y = -0.04;
+    major.position.y = floorY - 0.01;
     this.scene.add(major);
+
+    // Plano de contacto: sólo muestra la sombra proyectada (ShadowMaterial).
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(600, 600),
+      new THREE.ShadowMaterial({ opacity: 0.14, color: 0x1e293b })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = floorY;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
   }
 
   /** Tríada XYZ fija en la esquina inferior izquierda, orientada con la cámara. */
@@ -466,6 +485,7 @@ export class SceneViewer {
       this.stressBtn.style.color = '#1f2d3d';
       this.stressBtn.style.borderColor = '#9fb3c8';
     }
+    this.onStressMap?.(false);
     this.applyDimsVisibility();
     this.applyViewMode();
   }
@@ -486,6 +506,10 @@ export class SceneViewer {
       if (o.isMesh && o.material) {
         const mats: THREE.Material[] = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((m: any) => {
+          // Los proxies de sombra (materiales invisibles, colorWrite=false) NO
+          // se tocan: si no, en modo alambre dibujarían la silueta del stack
+          // como una jaula de aristas sobre la figura.
+          if (m.colorWrite === false) return;
           m.wireframe = wire;
           m.clippingPlanes = clip ? [this.clipPlane] : [];
           m.side = clip ? THREE.DoubleSide : THREE.FrontSide;
@@ -524,11 +548,13 @@ export class SceneViewer {
   frameCamera(radius: number, center: THREE.Vector3) {
     this.radius = radius;
     this.controls.target.copy(center);
-    const dir = CUBE_DIR.iso.clone().normalize();
-    this.perspCamera.position.copy(center.clone().add(dir.multiplyScalar(radius * 1.5)));
+    // Encuadre EXACTO de `Intento2`: dirección normalizada (1.1, 0.85, 1.3) a
+    // distancia 2.4·radio, con el ortogonal a fs = 1.4·radio.
+    const dir = new THREE.Vector3(1.1, 0.85, 1.3).normalize();
+    this.perspCamera.position.copy(center.clone().add(dir.multiplyScalar(radius * 2.4)));
     this.orthoCamera.position.copy(this.perspCamera.position);
     const aspect = this.container.clientWidth / Math.max(1, this.container.clientHeight);
-    const fs = radius * 1.25;
+    const fs = radius * 1.4;
     this.orthoCamera.left = -fs * aspect;
     this.orthoCamera.right = fs * aspect;
     this.orthoCamera.top = fs;
@@ -604,7 +630,6 @@ export class SceneViewer {
     this.ro.disconnect();
     if (this.modelGroup) this.disposeGroup(this.modelGroup);
     this.controls.dispose();
-    this.envRT?.dispose();
     this.stressBtn?.remove();
     this.renderer.dispose();
     if (this.renderer.domElement.parentNode) {
@@ -613,20 +638,14 @@ export class SceneViewer {
   }
 }
 
-/** Fondo en degradado vertical, estilo hoja CAD. */
-function gradientTexture(top: string, bottom: string): THREE.CanvasTexture {
-  const cv = document.createElement('canvas');
-  cv.width = 2;
-  cv.height = 256;
-  const ctx = cv.getContext('2d')!;
-  const grad = ctx.createLinearGradient(0, 0, 0, cv.height);
-  grad.addColorStop(0, top);
-  grad.addColorStop(1, bottom);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, cv.width, cv.height);
-  const tex = new THREE.CanvasTexture(cv);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+/** Rampa de color esfuerzo/térmica de `Intento2`: azul (frío) → cian → verde
+ *  → amarillo → rojo (caliente). Se exporta para el mapa de esfuerzo del
+ *  ensamble, tal y como la usaba el modelo de baldosa original. */
+export function heatColor(t: number): THREE.Color {
+  const c = new THREE.Color();
+  const x = Math.max(0, Math.min(1, t));
+  c.setHSL((1 - x) * 0.66, 0.85, 0.35 + 0.2 * x);
+  return c;
 }
 
 /** Contorno de aristas (estilo técnico) como hijo de una malla. */

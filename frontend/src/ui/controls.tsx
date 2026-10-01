@@ -15,7 +15,7 @@ export const Section: React.FC<{ title: string; children: React.ReactNode; right
   </div>
 );
 
-/** Tooltip con la fórmula usada (para la defensa ante el jurado). */
+/** Tooltip con la fórmula usada. */
 export const Formula: React.FC<{ eq: string; source?: string; note?: string }> = ({ eq, source, note }) => {
   const [open, setOpen] = useState(false);
   return (

@@ -47,7 +47,7 @@ describe('Entradas del usuario: sólo F_max, cadencia, a0 y f_exc', () => {
 
   it('los rangos son los del enunciado', () => {
     expect(INPUTS.Fmax.min).toBe(300);
-    expect(INPUTS.Fmax.max).toBe(1000);
+    expect(INPUTS.Fmax.max).toBe(1530);
     expect(INPUTS.cadence.min).toBe(60);
     expect(INPUTS.cadence.max).toBe(120);
     expect(INPUTS.a0.min).toBe(0.5);
@@ -57,7 +57,7 @@ describe('Entradas del usuario: sólo F_max, cadencia, a0 y f_exc', () => {
   });
 
   it('el recorte mantiene las entradas dentro del rango', () => {
-    expect(clampTileInputs({ Fmax: 5000 }).Fmax).toBe(1000);
+    expect(clampTileInputs({ Fmax: 5000 }).Fmax).toBe(1530);
     expect(clampTileInputs({ Fmax: 1 }).Fmax).toBe(300);
     expect(clampTileInputs({ cadence: 1e9 }).cadence).toBe(120);
     expect(clampBeamInputs({ a0: -5 }).a0).toBe(0.5);

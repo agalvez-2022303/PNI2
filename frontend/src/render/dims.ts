@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { balloonSprite, leaderLine, textSprite } from './labels';
 import { makeDimension } from './viewer';
-import { FRAME, STACK_HEIGHT_MM, DISC_DIAMETER_MM } from './assembly';
+import { TILE_GEOM, STACK_HEIGHT_MM, DISC_DIAMETER_MM } from './assembly';
 import { PartId } from '../bom/bom';
 
 /** Piezas con globo: id, número de pieza y posición del ancla. */
@@ -28,7 +28,7 @@ export const BALLOON_PARTS: { id: PartId; n: number }[] = [
 ];
 
 /** Radius de la esfera de distribución de los globos, en mm. */
-const R = 62;
+const R = 46;
 
 export interface BalloonLayer {
   group: THREE.Group;
@@ -73,6 +73,9 @@ export function buildBalloons(anchorOf: (id: PartId) => THREE.Vector3): BalloonL
       const target = tmp.copy(base).add(e.dir.clone().multiplyScalar(R)).clone();
       e.spr.position.copy(target);
       e.line.geometry.setFromPoints([base, target]);
+      // El material punteado necesita recalcular las distancias de línea en
+      // cada recolocación; si no, el guion deja de verse.
+      e.line.computeLineDistances();
     });
   };
 
@@ -89,56 +92,60 @@ export function buildBalloons(anchorOf: (id: PartId) => THREE.Vector3): BalloonL
   return { group, update, dispose };
 }
 
-/** Cotas lineales del ensamble, en mm. */
+/** Cotas lineales de la figura `Intento2`, en mm. */
 export function buildDimensions(): THREE.Group {
   const g = new THREE.Group();
   g.userData.dim = true;
-  const half = FRAME.outer / 2 + 16;
+  const G = TILE_GEOM;
+  const half = G.plateSize / 2 + 14;
 
-  // Diámetro de un disco, en planta y a la altura de un stack.
+  // Diámetro del disco, a media altura del stack, al frente.
+  const yMid = G.baseY + G.stackH / 2;
   g.add(
     makeDimension(
-      new THREE.Vector3(0, 2, 0),
-      new THREE.Vector3(DISC_DIAMETER_MM, 2, 0),
+      new THREE.Vector3(-G.D / 2, yMid, G.plateSize / 2 + 6),
+      new THREE.Vector3(G.D / 2, yMid, G.plateSize / 2 + 6),
       `ø ${DISC_DIAMETER_MM} mm`
     )
   );
 
-  // Altura del stack: 60 × 0.5 mm = 30 mm exactos.
-  const x = FRAME.stackPitch / 2;
+  // Altura visual del stack (60 discos de 0.5 mm + electrodos): 34.4 mm.
+  const xStack = -G.D / 2 - 7;
   g.add(
     makeDimension(
-      new THREE.Vector3(x, 4, 0),
-      new THREE.Vector3(x, 4 + STACK_HEIGHT_MM, 0),
-      `${STACK_HEIGHT_MM} mm`
+      new THREE.Vector3(xStack, G.baseY, 0),
+      new THREE.Vector3(xStack, G.baseY + G.stackH, 0),
+      `${G.stackH.toFixed(1)} mm`
     )
   );
 
-  // Separación entre centros de stacks vecinos.
-  const p = FRAME.stackPitch;
+  // Ancho de la placa (plateSize = max(2.2·ø, 40)).
   g.add(
     makeDimension(
-      new THREE.Vector3(-p / 2, 0.5, p / 2),
-      new THREE.Vector3(p / 2, 0.5, p / 2),
-      `${p} mm`
+      new THREE.Vector3(-G.plateSize / 2, G.plateH / 2, -half),
+      new THREE.Vector3(G.plateSize / 2, G.plateH / 2, -half),
+      `${G.plateSize} mm`
     )
   );
 
-  // Alto de la pared de la bandeja.
+  // Alto de la placa base.
+  const xb = G.plateSize / 2 + 7;
   g.add(
     makeDimension(
-      new THREE.Vector3(-half, 0, 0),
-      new THREE.Vector3(-half, FRAME.tray, 0),
-      `${FRAME.tray} mm`
+      new THREE.Vector3(xb, 0, G.plateSize / 2),
+      new THREE.Vector3(xb, G.plateH, G.plateSize / 2),
+      `${G.plateH} mm`
     )
   );
 
-  // Ancho exterior del marco.
+  // Diámetro exterior del resorte helicoidal (2·(2.4 + 0.7)).
+  const ySpr = G.baseY + G.stackH + 5;
+  const rOut = 2.4 + 0.7;
   g.add(
     makeDimension(
-      new THREE.Vector3(-FRAME.outer / 2, 0.5, -half),
-      new THREE.Vector3(FRAME.outer / 2, 0.5, -half),
-      `${FRAME.outer} mm`
+      new THREE.Vector3(G.springOff - rOut, ySpr, G.springOff),
+      new THREE.Vector3(G.springOff + rOut, ySpr, G.springOff),
+      `ø ${(2 * rOut).toFixed(1)} mm`
     )
   );
 
