@@ -5,7 +5,7 @@
  * frente, arrastrar y cerrar; los iconos las vuelven a abrir. Debajo, cada
  * apartado es una ventana más. «Simulation» abre el banco de trabajo con el
  * rectángulo de zoom del escritorio original. El apartado de equipo queda al
- * final, a la espera de los tres perfiles.
+ * final, con los tres integrantes.
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import './landing.css';
@@ -458,29 +458,27 @@ export function Landing() {
 
           <Window title="Equipo.txt" id="equipo" className="pz-sec pz-sec-team">
             <h2 className="pz-h2">El equipo</h2>
-            <p className="pz-text">
-              Somos tres. Los nombres, roles y biografías se publicarán aquí cuando el equipo envíe la información.
-            </p>
+            <p className="pz-text">Tres personas: liderazgo, robótica y software.</p>
             <ul className="pz-team">
               <li>
                 <PersonIcon />
                 <div>
-                  <strong>Integrante 1</strong>
-                  <span>Perfil pendiente</span>
+                  <strong>Luis De León</strong>
+                  <span>Team leader</span>
                 </div>
               </li>
               <li>
                 <PersonIcon />
                 <div>
-                  <strong>Integrante 2</strong>
-                  <span>Perfil pendiente</span>
+                  <strong>Alberto Galves</strong>
+                  <span>Robotics development</span>
                 </div>
               </li>
               <li>
                 <PersonIcon />
                 <div>
-                  <strong>Integrante 3</strong>
-                  <span>Perfil pendiente</span>
+                  <strong>Gabriel Hurtarte</strong>
+                  <span>Software development</span>
                 </div>
               </li>
             </ul>

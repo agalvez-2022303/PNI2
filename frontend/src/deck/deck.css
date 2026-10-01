@@ -1,0 +1,289 @@
+/* Escenario del deck: misma mesa tramada; solo layout de diapositiva. */
+
+html.pz-landing:has(.pz-deck):not(.pz-deck-print-root),
+html.pz-landing:has(.pz-deck):not(.pz-deck-print-root) body {
+  height: 100%;
+  overflow: hidden;
+}
+
+html.pz-landing .pz-deck {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+html.pz-landing .pz-deck-print {
+  height: auto;
+  overflow: visible;
+}
+
+.pz-deck-stage {
+  --deck-gutter-x: 112px;
+  --deck-gutter-y: 48px;
+  position: relative;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 20px 56px 24px;
+}
+
+/* El marco fija 16:9. La ventana llena el marco; el cuerpo hace scroll si sobra. */
+.pz-deck-frame {
+  width: min(calc(100vw - var(--deck-gutter-x)), calc((100dvh - var(--menubar-h) - var(--deck-gutter-y)) * 16 / 9));
+  aspect-ratio: 16 / 9;
+}
+
+.pz-deck-win {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.pz-deck-win > .pz-titlebar,
+.pz-deck-win > .pz-status {
+  flex: none;
+}
+
+.pz-deck-win > .pz-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  padding: 28px 32px 22px;
+}
+
+.pz-deck .pz-h1 {
+  font-size: clamp(36px, 5vw, 68px);
+  margin-bottom: 16px;
+}
+
+.pz-deck .pz-h2 {
+  font-size: clamp(26px, 3.2vw, 38px);
+}
+
+.pz-deck .pz-lede {
+  margin-bottom: 0;
+}
+
+.pz-deck-split {
+  display: grid;
+  gap: 22px;
+}
+
+@media (min-width: 820px) {
+  .pz-deck-split {
+    grid-template-columns: 1fr 1fr;
+    gap: 36px;
+  }
+}
+
+.pz-deck-split .pz-list li {
+  max-width: none;
+}
+
+.pz-deck-eqs {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pz-deck-eqs li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding: 10px 12px;
+  border: var(--px) solid var(--ink);
+}
+
+.pz-deck-eqs .pz-eq {
+  padding: 0;
+}
+
+.pz-deck-eqs .pz-note {
+  padding: 0;
+}
+
+.pz-deck-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.pz-deck-hit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 48px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pz-deck-hit:disabled {
+  cursor: default;
+}
+
+.pz-deck-hit-prev {
+  left: 0;
+}
+
+.pz-deck-hit-next {
+  right: 0;
+}
+
+.pz-deck-hit:hover:not(:disabled) {
+  background: var(--dither-25);
+}
+
+.pz-deck-hit:focus-visible {
+  outline: var(--px) dashed var(--ink);
+  outline-offset: -6px;
+}
+
+.pz-qr {
+  margin: 0;
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.pz-qr svg {
+  display: block;
+  border: var(--px) solid var(--ink);
+  background: #fff;
+  image-rendering: pixelated;
+}
+
+.pz-qr figcaption {
+  font-family: var(--font-data);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.pz-deck-annex {
+  display: grid;
+  gap: 28px;
+  align-items: start;
+}
+
+@media (min-width: 820px) {
+  .pz-deck-annex {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 40px;
+  }
+}
+
+.pz-deck-docs {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pz-deck-docs li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px dotted var(--ink);
+  font-family: var(--font-data);
+  font-weight: 600;
+}
+
+.pz-deck-docs li:first-child {
+  border-top: 0;
+}
+
+.pz-deck-docs span {
+  font-family: var(--font-text);
+  font-weight: 400;
+}
+
+.pz-deck-print .pz-deck-sheet {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px 32px;
+  break-after: page;
+  page-break-after: always;
+}
+
+.pz-deck-print .pz-deck-sheet:last-child {
+  break-after: auto;
+  page-break-after: auto;
+}
+
+.pz-deck-print .pz-deck-frame {
+  width: min(calc(100vw - 64px), calc((100dvh - 48px) * 16 / 9));
+}
+
+@media print {
+  @page {
+    size: 13.333in 7.5in;
+    margin: 0;
+  }
+
+  html.pz-deck-print-root,
+  html.pz-deck-print-root body,
+  html.pz-deck-print-root #root {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+
+  .pz-menubar,
+  .pz-deck-hit,
+  .pz-deck-nav,
+  .pz-skip {
+    display: none !important;
+  }
+
+  .pz-deck-print .pz-deck-sheet {
+    width: 13.333in;
+    height: 7.5in;
+    min-height: 0;
+    padding: 0.32in 0.4in;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .pz-deck-print .pz-deck-sheet:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .pz-deck-print .pz-deck-frame {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+  }
+
+  .pz-deck-win {
+    filter: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .pz-deck-stage {
+    --deck-gutter-x: 24px;
+    --deck-gutter-y: 28px;
+    padding: 12px 12px 16px;
+  }
+
+  .pz-deck-hit {
+    display: none;
+  }
+
+  .pz-deck-win > .pz-body {
+    padding: 20px 16px 16px;
+  }
+}

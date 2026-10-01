@@ -104,32 +104,57 @@ export function SimulationButton({
 }
 
 interface MenuBarProps {
-  mode: 'landing' | 'simulation';
+  mode: 'landing' | 'simulation' | 'deck';
   launch?: (el: HTMLElement) => void;
 }
 
+function homeHref(mode: MenuBarProps['mode']): string {
+  switch (mode) {
+    case 'deck':
+      return '/';
+    case 'landing':
+    case 'simulation':
+      return '#top';
+    default: {
+      const _never: never = mode;
+      return _never;
+    }
+  }
+}
+
 export function MenuBar({ mode, launch }: MenuBarProps) {
+  const home = homeHref(mode);
   return (
     <header className="pz-menubar">
-      <a className="pz-brand" href="#top" aria-label="PiezoLab, volver al inicio">
+      <a className="pz-brand" href={home} aria-label="PiezoLab, volver al inicio">
         <LogoMark />
         <span>PiezoLab</span>
       </a>
-      <nav aria-label="Apartados">
-        <ul>
-          {NAV_LINKS.map((l) => (
-            <li key={l.href}>
-              <a href={l.href}>{l.label}</a>
+      {mode === 'deck' ? (
+        <nav aria-label="Deck">
+          <ul>
+            <li>
+              <a href={`/${SIMULATION_HASH}`}>Simulation</a>
             </li>
-          ))}
-        </ul>
-      </nav>
-      {mode === 'simulation' || !launch ? (
-        <a className="pz-btn pz-btn-menu" href="#top">
+          </ul>
+        </nav>
+      ) : (
+        <nav aria-label="Apartados">
+          <ul>
+            {NAV_LINKS.map((l) => (
+              <li key={l.href}>
+                <a href={l.href}>{l.label}</a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
+      {mode === 'landing' && launch ? (
+        <SimulationButton launch={launch} variant="menu" />
+      ) : (
+        <a className="pz-btn pz-btn-menu" href={home}>
           Inicio
         </a>
-      ) : (
-        <SimulationButton launch={launch} variant="menu" />
       )}
     </header>
   );

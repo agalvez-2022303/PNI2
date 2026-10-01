@@ -31,6 +31,10 @@ function makeDevServerV5Compatible(devServerConfig) {
     ...compatibleConfig.headers,
     "Cross-Origin-Resource-Policy": "same-origin",
   };
+  compatibleConfig.historyApiFallback = {
+    disableDotRule: true,
+    index: '/index.html',
+  };
 
   if (onBeforeSetupMiddleware || setupMiddlewares) {
     compatibleConfig.setupMiddlewares = (middlewares, devServer) => {
