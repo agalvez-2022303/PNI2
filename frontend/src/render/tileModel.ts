@@ -120,8 +120,11 @@ export function buildTileModel(p: TileParams): TileMesh {
   const corners = [[off, off], [-off, off], [off, -off], [-off, -off]];
   const springMat = new THREE.MeshStandardMaterial({ color: 0x8892a3, metalness: 0.85, roughness: 0.3 });
   for (const [cx, cz] of corners) {
-    const curve = springCurve(stackH, Math.max(3, Math.round(stackH / 6)), 2.4);
-    const geo = new THREE.TubeGeometry(curve, 200, 0.7, 8, false);
+    // Espiras más apretadas (paso ≈ 3.4 mm) para que el resorte se vea
+    // comprimido y no "estirado": antes stackH/6, ahora stackH/3.4.
+    const coils = Math.max(3, Math.round(stackH / 3.4));
+    const curve = springCurve(stackH, coils, 2.4);
+    const geo = new THREE.TubeGeometry(curve, coils * 32, 0.7, 8, false);
     const spring = new THREE.Mesh(geo, springMat);
     spring.position.set(cx, baseY, cz);
     spring.castShadow = true;
