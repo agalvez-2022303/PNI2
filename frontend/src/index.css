@@ -1491,11 +1491,12 @@ input[type='checkbox']:checked::after {
 }
 
 /* ------------------------------------------------------------------- 3D */
+/* El visor es un lienzo CAD claro; el resto de la interfaz se queda oscuro. */
 
 .cad-canvas {
   position: absolute;
   inset: 0;
-  background: var(--bg);
+  background: linear-gradient(180deg, #f4f7fb 0%, #d5dde8 100%);
 }
 
 .cad-canvas canvas {
@@ -1511,8 +1512,9 @@ input[type='checkbox']:checked::after {
   z-index: 3;
   min-width: 214px;
   padding: 5px 8px;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: rgba(248, 250, 252, 0.92);
+  border: 1px solid #9fb3c8;
+  color: #1f2d3d;
   font-size: 11px;
   pointer-events: none;
 }
@@ -1526,23 +1528,23 @@ input[type='checkbox']:checked::after {
 
 .cad-readout-row b {
   font-weight: 400;
-  color: var(--accent);
+  color: #0a6fa8;
   font-variant-numeric: tabular-nums;
 }
 
 .cad-readout-row b.bad {
-  color: var(--fail);
+  color: #c62828;
 }
 
 .cad-readout-row .muted {
-  color: var(--dim);
+  color: #52657a;
 }
 
 .cad-scale {
   display: flex;
   height: 9px;
   margin: 4px 0 2px;
-  border: 1px solid var(--line);
+  border: 1px solid #9fb3c8;
 }
 
 .cad-scale-stop {
@@ -1552,21 +1554,21 @@ input[type='checkbox']:checked::after {
 .cad-scale-ticks {
   display: flex;
   justify-content: space-between;
-  color: var(--dim);
+  color: #52657a;
   margin-bottom: 4px;
 }
 
 .cad-corner-note {
   position: absolute;
-  left: 8px;
+  left: 104px;
   bottom: 8px;
   z-index: 3;
   display: flex;
   flex-direction: column;
   font-size: 11px;
-  color: var(--dim);
-  background: var(--surface);
-  border: 1px solid var(--line);
+  color: #1f2d3d;
+  background: rgba(248, 250, 252, 0.92);
+  border: 1px solid #9fb3c8;
   padding: 3px 7px;
   pointer-events: none;
 }

@@ -13,7 +13,6 @@ import { balloonSprite, leaderLine, textSprite } from './labels';
 import { makeDimension } from './viewer';
 import { FRAME, STACK_HEIGHT_MM, DISC_DIAMETER_MM } from './assembly';
 import { PartId } from '../bom/bom';
-import { T } from '../ui/cad/theme';
 
 /** Piezas con globo: id, número de pieza y posición del ancla. */
 export const BALLOON_PARTS: { id: PartId; n: number }[] = [
@@ -60,8 +59,8 @@ export function buildBalloons(anchorOf: (id: PartId) => THREE.Vector3): BalloonL
   ];
 
   BALLOON_PARTS.forEach((b, i) => {
-    const spr = balloonSprite(b.n, T.accent);
-    const line = leaderLine(new THREE.Vector3(), new THREE.Vector3(), T.accent);
+    const spr = balloonSprite(b.n);
+    const line = leaderLine(new THREE.Vector3(), new THREE.Vector3());
     group.add(spr, line);
     entries.push({ n: b.n, spr, line, dir: dirs[i % dirs.length].clone().normalize() });
   });
@@ -125,12 +124,12 @@ export function buildDimensions(): THREE.Group {
     )
   );
 
-  // Alto exterior del marco.
+  // Alto de la pared de la bandeja.
   g.add(
     makeDimension(
       new THREE.Vector3(-half, 0, 0),
-      new THREE.Vector3(-half, FRAME.height, 0),
-      `${FRAME.height} mm`
+      new THREE.Vector3(-half, FRAME.tray, 0),
+      `${FRAME.tray} mm`
     )
   );
 
@@ -149,11 +148,11 @@ export function buildDimensions(): THREE.Group {
 /** Etiqueta flotante de la cota principal del stack (60 × 0.5 mm). */
 export function stackDetailLabel(n: number, t: number): THREE.Sprite {
   const spr = textSprite(`${n} × ${t} mm = ${(n * t).toFixed(1)} mm`, {
-    color: T.text,
+    color: '#1f2d3d',
     size: 32,
     bg: true,
-    bgColor: T.surface,
-    border: T.line,
+    bgColor: '#f8fafc',
+    border: '#9fb3c8',
   });
   spr.position.set(0, 62, 0);
   spr.userData.dim = true;

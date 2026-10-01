@@ -6,7 +6,7 @@
  * monoespaciada de la aplicación.
  */
 import * as THREE from 'three';
-import { T, FONT } from '../ui/cad/theme';
+import { FONT } from '../ui/cad/theme';
 
 export interface LabelOpts {
   /** Color del texto. */
@@ -26,7 +26,7 @@ const PAD = 7;
 /** Sprite con una línea de texto. */
 export function textSprite(text: string, o: LabelOpts = {}): THREE.Sprite {
   const size = o.size ?? 34;
-  const color = o.color ?? T.text;
+  const color = o.color ?? '#1f2d3d';
   const probe = document.createElement('canvas').getContext('2d')!;
   probe.font = `${size}px ${FONT}`;
   const w = Math.ceil(probe.measureText(text).width) + PAD * 2;
@@ -37,7 +37,7 @@ export function textSprite(text: string, o: LabelOpts = {}): THREE.Sprite {
   cv.height = h;
   const ctx = cv.getContext('2d')!;
   if (o.bg !== false) {
-    ctx.fillStyle = o.bgColor ?? T.surface;
+    ctx.fillStyle = o.bgColor ?? '#f8fafc';
     ctx.fillRect(0, 0, w, h);
     if (o.border) {
       ctx.strokeStyle = o.border;
@@ -72,14 +72,14 @@ export function updateSpriteScale(spr: THREE.Sprite) {
   spr.scale.set(c.w * s, c.h * s, 1);
 }
 
-/** Globo numerado: disco con el número dentro, estilo plano. */
-export function balloonSprite(n: number, color: string = T.accent): THREE.Sprite {
+/** Globo numerado: disco claro con aro y número oscuros, estilo plano. */
+export function balloonSprite(n: number, color: string = '#1f2d3d'): THREE.Sprite {
   const S = 84;
   const cv = document.createElement('canvas');
   cv.width = cv.height = S;
   const ctx = cv.getContext('2d')!;
-  // Disco relleno con el color del balloon, sin degradado ni sombra.
-  ctx.fillStyle = T.surface;
+  // Disco claro con borde oscuro: legible sobre el fondo claro del visor.
+  ctx.fillStyle = '#f8fafc';
   ctx.beginPath();
   ctx.arc(S / 2, S / 2, S / 2 - 5, 0, Math.PI * 2);
   ctx.fill();
@@ -105,7 +105,7 @@ export function balloonSprite(n: number, color: string = T.accent): THREE.Sprite
 }
 
 /** Línea guía del globo: une el globo con la pieza a la que apunta. */
-export function leaderLine(from: THREE.Vector3, to: THREE.Vector3, color: string = T.accent): THREE.Line {
+export function leaderLine(from: THREE.Vector3, to: THREE.Vector3, color: string = '#1f2d3d'): THREE.Line {
   const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
   const line = new THREE.Line(
     geo,

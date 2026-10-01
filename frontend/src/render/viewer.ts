@@ -1,15 +1,15 @@
 /**
- * Visor 3D estilo CAD: fondo frío, iluminación plana, rejilla de plano de
- * trabajo, tríada de ejes XYZ, ViewCube, cotas conmutables y plano de corte
- * ajustable.
+ * Visor 3D estilo CAD: fondo claro en degradado, iluminación plana, rejilla
+ * de plano de trabajo, tríada de ejes XYZ, ViewCube, cotas conmutables y plano
+ * de corte ajustable.
  *
- * Sin sombras ni degradados: la profundidad la dan las aristas y el color de
- * datos (esfuerzo σ). La única paleta decorativa es la del tema CAD.
+ * Sin sombras: la profundidad la dan las aristas oscuras y el color de datos
+ * (esfuerzo σ). El visor es claro; el resto de la interfaz se queda oscuro.
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { axisLabel, textSprite } from './labels';
-import { T } from '../ui/cad/theme';
 
 export type ViewMode = 'perspective' | 'orthographic' | 'section' | 'wireframe' | 'exploded';
 
@@ -22,17 +22,22 @@ export interface PickInfo {
 }
 
 export const CAD = {
-  background: T.bg,
-  gridMajor: '#2c3a4c',
-  gridMinor: '#1b2430',
-  edge: '#5b6b7d',
-  dimLine: '#7d8ea3',
-  dimText: T.accent,
-  selEmissive: T.accent,
-  selOutline: T.accent,
-  axisX: '#ef5350',
-  axisY: '#3ddc97',
-  axisZ: '#38bdf8',
+  /** Degradado vertical del fondo estilo hoja CAD. */
+  bgTop: '#f4f7fb',
+  bgBottom: '#d5dde8',
+  gridMajor: '#9fb3c8',
+  gridMinor: '#9fb3c8',
+  edge: '#1f2d3d',
+  dimLine: '#1f2d3d',
+  dimText: '#1f2d3d',
+  dimChip: '#f8fafc',
+  dimChipBorder: '#9fb3c8',
+  selEmissive: '#0284c7',
+  selOutline: '#0284c7',
+  axisX: '#d32f2f',
+  axisY: '#2e7d32',
+  axisZ: '#1565c0',
+  ink: '#1f2d3d',
 } as const;
 
 /** Orientaciones del ViewCube. */
@@ -86,6 +91,12 @@ export class SceneViewer {
   private cubeRoot: THREE.Group;
   private cubeSize = 96;
 
+  /** Mapa de esfuerzo conmutado desde el botón del propio visor. */
+  private stressMapOn = false;
+  private stressBtn: HTMLButtonElement;
+  /** Render target del mapa de entorno (PMREM); se libera en dispose(). */
+  private envRT: THREE.WebGLRenderTarget | null = null;
+
   constructor(container: HTMLElement) {
     this.container = container;
     const w = container.clientWidth || 800;
@@ -102,7 +113,15 @@ export class SceneViewer {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(CAD.background);
+    this.scene.background = gradientTexture(CAD.bgTop, CAD.bgBottom);
+
+    // Mapa de entorno (PMREM): da reflejo y contraste a los materiales PBR
+    // sin necesidad de sombras. Es lo que separa un "viewer CAD" de un
+    // bloque plano negro.
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
+    this.scene.environment = this.envRT.texture;
+    pmrem.dispose();
 
     this.perspCamera = new THREE.PerspectiveCamera(45, w / h, 0.5, 4000);
     this.perspCamera.position.set(110, 90, 150);
@@ -135,6 +154,7 @@ export class SceneViewer {
     this.cubeRoot = cube.root;
 
     this.bindPointer();
+    this.stressBtn = this.buildStressButton();
 
     this.ro = new ResizeObserver(() => this.onResize());
     this.ro.observe(container);
@@ -142,20 +162,55 @@ export class SceneViewer {
     this.animate();
   }
 
-  /** Iluminación plana: sin sombras ni focos duros. */
+  /** Iluminación: el entorno PMREM es la fuente principal; las luces sólo
+   *  dirigen el brillo. Con environment + estas intensidades ninguna pieza
+   *  queda negra. */
   private setupLights() {
-    this.scene.add(new THREE.AmbientLight(0xffffff, 1.15));
-    const hemi = new THREE.HemisphereLight(0xdce8f5, 0x0b0f14, 0.5);
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const hemi = new THREE.HemisphereLight(0xf4f7fb, 0xd5dde8, 0.4);
     this.scene.add(hemi);
-    const key = new THREE.DirectionalLight(0xffffff, 0.85);
+    const key = new THREE.DirectionalLight(0xffffff, 0.7);
     key.position.set(90, 180, 120);
     this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0xc8d3df, 0.3);
+    const fill = new THREE.DirectionalLight(0xc8d3df, 0.25);
     fill.position.set(-120, 60, -90);
     this.scene.add(fill);
   }
 
-  /** Rejilla de plano de trabajo en dos escalas, sin plano opaco. */
+  /** Botón «mapa de esfuerzo», propio del visor: apagado por defecto. */
+  private buildStressButton(): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'mapa de esfuerzo';
+    btn.style.cssText =
+      'position:absolute;z-index:6;right:10px;bottom:10px;padding:3px 9px;' +
+      `font:11px ${"'IBM Plex Mono', ui-monospace, monospace"};background:#f8fafc;` +
+      'color:#1f2d3d;border:1px solid #9fb3c8;cursor:pointer;border-radius:0;';
+    btn.addEventListener('click', () => {
+      this.stressMapOn = !this.stressMapOn;
+      this.setStressMap(this.stressMapOn);
+      btn.style.color = this.stressMapOn ? '#0284c7' : '#1f2d3d';
+      btn.style.borderColor = this.stressMapOn ? '#0284c7' : '#9fb3c8';
+    });
+    this.container.appendChild(btn);
+    return btn;
+  }
+
+  /** Llama al hook del modelo (assembly) buscando `userData.setStressMap`. */
+  private setStressMap(v: boolean) {
+    const find = (o: THREE.Object3D): ((s: boolean) => void) | null => {
+      const fn = (o.userData as any)?.setStressMap;
+      if (typeof fn === 'function') return fn as (s: boolean) => void;
+      for (const c of o.children) {
+        const r = find(c);
+        if (r) return r;
+      }
+      return null;
+    };
+    find(this.modelGroup ?? new THREE.Group())?.(v);
+  }
+
+  /** Rejilla de plano de trabajo en dos escalas: fina al 40 %, mayores al 70 %. */
   private setupGround() {
     const minor = new THREE.GridHelper(
       400,
@@ -163,7 +218,7 @@ export class SceneViewer {
       new THREE.Color(CAD.gridMinor),
       new THREE.Color(CAD.gridMinor)
     );
-    (minor.material as THREE.Material).opacity = 0.55;
+    (minor.material as THREE.Material).opacity = 0.4;
     (minor.material as THREE.Material).transparent = true;
     minor.position.y = -0.05;
     this.scene.add(minor);
@@ -174,7 +229,7 @@ export class SceneViewer {
       new THREE.Color(CAD.gridMajor),
       new THREE.Color(CAD.gridMajor)
     );
-    (major.material as THREE.Material).opacity = 0.9;
+    (major.material as THREE.Material).opacity = 0.7;
     (major.material as THREE.Material).transparent = true;
     major.position.y = -0.04;
     this.scene.add(major);
@@ -206,7 +261,7 @@ export class SceneViewer {
     group.add(mkAxis(new THREE.Vector3(1, 0, 0), CAD.axisX, 'x'));
     group.add(mkAxis(new THREE.Vector3(0, 1, 0), CAD.axisY, 'y'));
     group.add(mkAxis(new THREE.Vector3(0, 0, 1), CAD.axisZ, 'z'));
-    group.add(new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), new THREE.MeshBasicMaterial({ color: 0x5b6b7d })));
+    group.add(new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), new THREE.MeshBasicMaterial({ color: CAD.ink })));
     scene.add(group);
     return { scene, camera, group };
   }
@@ -220,12 +275,12 @@ export class SceneViewer {
     const root = new THREE.Group();
 
     const faces: { view: CubeView; color: string; n: THREE.Vector3 }[] = [
-      { view: 'front', color: '#22303f', n: new THREE.Vector3(0, 0, 1) },
-      { view: 'rear', color: '#1b2532', n: new THREE.Vector3(0, 0, -1) },
-      { view: 'right', color: '#22303f', n: new THREE.Vector3(1, 0, 0) },
-      { view: 'left', color: '#1b2532', n: new THREE.Vector3(-1, 0, 0) },
-      { view: 'top', color: '#26374a', n: new THREE.Vector3(0, 1, 0) },
-      { view: 'bottom', color: '#161e28', n: new THREE.Vector3(0, -1, 0) },
+      { view: 'front', color: '#c9d5e3', n: new THREE.Vector3(0, 0, 1) },
+      { view: 'rear', color: '#aebdd0', n: new THREE.Vector3(0, 0, -1) },
+      { view: 'right', color: '#c9d5e3', n: new THREE.Vector3(1, 0, 0) },
+      { view: 'left', color: '#aebdd0', n: new THREE.Vector3(-1, 0, 0) },
+      { view: 'top', color: '#dde6f0', n: new THREE.Vector3(0, 1, 0) },
+      { view: 'bottom', color: '#93a7bf', n: new THREE.Vector3(0, -1, 0) },
     ];
     for (const f of faces) {
       const m = new THREE.Mesh(
@@ -238,10 +293,10 @@ export class SceneViewer {
       m.userData.normal = f.n.clone();
       root.add(m);
     }
-    // Aristas del cubo
+    // Aristas del cubo, oscuras: legibles sobre el fondo claro del visor.
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1.56, 1.56, 1.56)),
-      new THREE.LineBasicMaterial({ color: '#5b6b7d' })
+      new THREE.LineBasicMaterial({ color: CAD.ink })
     );
     root.add(edges);
     scene.add(root);
@@ -405,6 +460,12 @@ export class SceneViewer {
     this.modelGroup = group;
     this.scene.add(group);
     this.selectedId = null;
+    // El modelo nuevo arranca siempre con el mapa de esfuerzo apagado.
+    this.stressMapOn = false;
+    if (this.stressBtn) {
+      this.stressBtn.style.color = '#1f2d3d';
+      this.stressBtn.style.borderColor = '#9fb3c8';
+    }
     this.applyDimsVisibility();
     this.applyViewMode();
   }
@@ -464,7 +525,7 @@ export class SceneViewer {
     this.radius = radius;
     this.controls.target.copy(center);
     const dir = CUBE_DIR.iso.clone().normalize();
-    this.perspCamera.position.copy(center.clone().add(dir.multiplyScalar(radius * 2.1)));
+    this.perspCamera.position.copy(center.clone().add(dir.multiplyScalar(radius * 1.5)));
     this.orthoCamera.position.copy(this.perspCamera.position);
     const aspect = this.container.clientWidth / Math.max(1, this.container.clientHeight);
     const fs = radius * 1.25;
@@ -523,7 +584,7 @@ export class SceneViewer {
     this.renderer.setViewport(w - m - this.cubeSize, h - m - this.cubeSize, this.cubeSize, this.cubeSize);
     this.renderer.setScissor(w - m - this.cubeSize, h - m - this.cubeSize, this.cubeSize, this.cubeSize);
     this.renderer.clearDepth();
-    this.cubeRoot.rotation.copy(this.active.quaternion).invert();
+    this.cubeRoot.quaternion.copy(this.active.quaternion).invert();
     this.renderer.render(this.cubeScene, this.cubeCamera);
     this.renderer.setScissorTest(false);
   };
@@ -543,11 +604,29 @@ export class SceneViewer {
     this.ro.disconnect();
     if (this.modelGroup) this.disposeGroup(this.modelGroup);
     this.controls.dispose();
+    this.envRT?.dispose();
+    this.stressBtn?.remove();
     this.renderer.dispose();
     if (this.renderer.domElement.parentNode) {
       this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
     }
   }
+}
+
+/** Fondo en degradado vertical, estilo hoja CAD. */
+function gradientTexture(top: string, bottom: string): THREE.CanvasTexture {
+  const cv = document.createElement('canvas');
+  cv.width = 2;
+  cv.height = 256;
+  const ctx = cv.getContext('2d')!;
+  const grad = ctx.createLinearGradient(0, 0, 0, cv.height);
+  grad.addColorStop(0, top);
+  grad.addColorStop(1, bottom);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 /** Contorno de aristas (estilo técnico) como hijo de una malla. */
@@ -583,7 +662,13 @@ export function makeDimension(p1: THREE.Vector3, p2: THREE.Vector3, text: string
 
   // Extensión de la cota: une el punto medido con la línea de cota.
   const mid = p1.clone().add(p2).multiplyScalar(0.5).add(perp.clone().multiplyScalar(5));
-  const spr = textSprite(text, { color: CAD.dimText, size: 32, bg: true, bgColor: T.surface, border: T.line });
+  const spr = textSprite(text, {
+    color: CAD.dimText,
+    size: 32,
+    bg: true,
+    bgColor: CAD.dimChip,
+    border: CAD.dimChipBorder,
+  });
   spr.position.copy(mid);
   spr.renderOrder = 1000;
   g.add(spr);
